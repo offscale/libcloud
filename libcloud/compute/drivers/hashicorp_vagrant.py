@@ -16,10 +16,14 @@
 """
 Node driver for Vagrant.
 """
-import subprocess
+from __future__ import print_function
 
 from os import path
 
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import StringIO
 try:
     import simplejson as json
 except ImportError:
@@ -29,6 +33,7 @@ from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize
 from libcloud.compute.types import NodeState, StorageVolumeState, VolumeSnapshotState
 
 from vagrant import compat, Vagrant
+from vagrant2json import vagrant2dict
 
 
 class VagrantDriver(NodeDriver):
@@ -38,7 +43,7 @@ class VagrantDriver(NodeDriver):
 
     name = 'Vagrant'
     website = 'https://www.vagrantup.com'
-    features = {'create_node': ['password']}
+    features = {'create_node': ['ssh_key']}
 
     NODE_STATE_MAPPING = {
         'Starting': NodeState.PENDING,
@@ -62,10 +67,24 @@ class VagrantDriver(NodeDriver):
 
     _vagrants = {}
 
-    def __init__(self, *args, **kwargs):
-        super(VagrantDriver, self).__init__(*args, **kwargs)
+    def __init__(self, ex_vagrantfile=None, *args, **kwargs):
+        """
+        Instantiate VagrantDriver object
 
-    def list_nodes(self, ex_vagrantfile=None, ex_provider=None):
+        @inherits: :class:`NodeDriver.__init__` (`BaseDriver.__init__`)
+
+        :keyword ex_provider: a list of providers to filter the images returned. Defaults to all.
+        :type ex_provider: ``list`` of ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                 default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+        """
+        super(VagrantDriver, self).__init__(*args, **kwargs)
+        if ex_vagrantfile is not None:
+            self.ex_add_vagrantfile(vagrantfile=ex_vagrantfile)
+
+    def list_nodes(self, ex_vagrantfile=None, ex_vm_name=None, ex_provider=None):
         """
         List all nodes.
 
@@ -78,14 +97,35 @@ class VagrantDriver(NodeDriver):
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
 
+        :keyword ex_vm_name: required in a multi-VM environment.
+        :type ex_vm_name: ``str``
+
         :return: list of Node
         :rtype: ``[Node]``
         """
         self.ex_add_vagrantfile(ex_vagrantfile)
 
-        # TODO: parse this result into a list of Node
-        print('{!r}'.format(
-            self.ex_get_vagrant(ex_vagrantfile)._run_vagrant_command(['global-status', '--machine-readable'])))
+        vagrant = self.ex_get_vagrant(ex_vagrantfile)
+
+        ssh_config = vagrant.conf(ex_vm_name)
+        # if ip_address(ssh_config['HostName']).is_private:
+        public_ips = [ssh_config['HostName'] + ssh_config['Port']]
+        # else:
+        private_ips = [ssh_config['HostName'] + ssh_config['Port']]
+
+        tuple_of_status_dicts = vagrant2dict(
+            StringIO(vagrant._run_vagrant_command(['global-status', '--machine-readable']))
+        )
+
+        return [Node(id=status_dict['id'], name=status_dict['name'],
+                     state=status_dict['state'], driver=VagrantDriver,
+                     public_ips=public_ips, private_ips=private_ips,
+                     extra={'provider': status_dict['provider'],
+                            'directory': status_dict['directory'],
+                            'user': vagrant.user(ex_vm_name),
+                            'ssh_config': ssh_config
+                            })
+                for status_dict in tuple_of_status_dicts]
 
     def list_sizes(self, location=None):
         raise NotImplementedError('N/A for Vagrant')
@@ -93,27 +133,59 @@ class VagrantDriver(NodeDriver):
     def list_locations(self):
         raise NotImplementedError('N/A for Vagrant')
 
-    def create_node(self, name, size, image, auth=None, ex_vagrantfile=None, **kwargs):
+    def create_node(self, name, size, image=None, auth=None, ex_vagrantfile=None, ex_box_url=None,
+                    ex_no_provision=False, ex_provider=None, ex_vm_name=None,
+                    ex_provision=None, ex_provision_with=None,
+                    **kwargs):
         """
         @inherits: :class:`NodeDriver.create_node`
 
-        :param name: The name for this new node (required)
+        :keyword name: The name for this new node (required)
         :type name: ``str``
 
-        :param image: The image to use when creating this node (required)
+        :keyword image: The image to use when creating this node (required)
         :type image: `NodeImage`
 
-        :param size: The size of the node to create (required)
+        :keyword size: The size of the node to create (required)
         :type size: `NodeSize`
 
         :keyword ex_vagrantfile: Vagrantfile location
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
+
+        :keyword ex_box_url: box url. Takes precedence over `image.id`.
+        :type ex_vagrantfile: ``str``
+
+        :keyword ex_no_provision: if True, disable provisioning.  Same as 'ex_provision=False'.
+        :type ex_no_provision: ``bool``
+
+        :keyword ex_provider: Back the machine with a specific ex_provider
+        :type ex_provider: ``str``
+
+        :keyword ex_vm_name: name of VM.
+        :type ex_vm_name: ``str``
+
+        :keyword ex_provision_with: optional list of provisioners to enable.
+        :type ex_provision_with: ``list`` of ``str``
+
+        :keyword ex_provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
+        :type ex_provision: ``bool``
+
+        :return: starting operation result.
+        :rtype: ``bool``
         """
 
-        raise NotImplementedError()
+        if size is not None:
+            raise NotImplementedError('size for create_node')
+        vagrant = self.ex_get_vagrant(ex_vagrantfile)
+        vagrant.init(box_name=name,
+                     box_url=ex_box_url if ex_box_url is not None else image.id)
+        return self.ex_start_node(vagrantfile=ex_vagrantfile,
+                                  no_provision=ex_no_provision, provider=ex_provider,
+                                  vm_name=ex_vm_name, provision=ex_provision, provision_with=ex_provision_with
+                                  )
 
-    def reboot_node(self, ex_vagrantfile=None, ex_vm_name=None):
+    def reboot_node(self, ex_vagrantfile=None, ex_vm_name=None, ex_provision=None, ex_provision_with=None):
         """
         Reboot the given node
 
@@ -123,11 +195,17 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
 
-        :keyword ex_vm_name: vm_name
+        :keyword ex_vm_name: name of VM.
                              default to ``None`` [default]
         :type ex_vm_name: ``str``
+
+        :keyword ex_provision_with: optional list of provisioners to enable.
+        :type ex_provision_with: ``list`` of ``str``
+
+        :keyword ex_provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
+        :type ex_provision: ``bool``
         """
-        return self.ex_get_vagrant(ex_vagrantfile).destroy(ex_vm_name)
+        self.ex_get_vagrant(ex_vagrantfile).reload(ex_vm_name, ex_provision, ex_provision_with)
 
     def destroy_node(self, node, ex_vagrantfile=None, ex_vm_name=None):
         """
@@ -154,6 +232,7 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
         """
+        # TODO create a list of `VolumeSnapshot` from this
         return self.ex_get_vagrant(ex_vagrantfile).snapshot_list()
 
     def create_volume(self, size, name, location=None, snapshot=None):
@@ -218,7 +297,7 @@ class VagrantDriver(NodeDriver):
     # Image management methods
     ##
 
-    def list_images(self, location=None, ex_provider=None):
+    def list_images(self, location=None, ex_provider=None, ex_vagrantfile=None):
         """
         List images on a provider.
 
@@ -229,17 +308,23 @@ class VagrantDriver(NodeDriver):
 
         :keyword ex_provider: a list of providers to filter the images returned. Defaults to all.
         :type ex_provider: ``list`` of ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
 
         if ex_provider:
             raise NotImplementedError('ex_provider is not yet implemented, TODO')
 
-        return [line[line.rfind(',') + 1:] for line in compat.decode(
-            subprocess.check_output('vagrant box list --machine-readable', shell=True)).splitlines()
-                if 'box-name' in line]
+        return [NodeImage(id=box.name, name=box.name,
+                          driver=VagrantDriver,
+                          extra={'provider': box.provider,
+                                 'version': box.version})
+                for box in self.ex_get_vagrant(ex_vagrantfile).box_list()]
 
     def create_image(self, node, name, description=None, ex_snapshot_id=None,
-                     ex_image_version=None, ex_client_token=None):
+                     ex_image_version=None):
         """
         Creates an image from a system disk snapshot.
 
@@ -251,12 +336,9 @@ class VagrantDriver(NodeDriver):
 
         :keyword ex_image_version: the version number of the image
         :type ex_image_version: ``str``
-
-        :keyword ex_client_token: a token generated by client to identify
-                                  each request.
-        :type ex_client_token: ``str``
         """
         raise NotImplementedError()
+        # Maybe look at Packer?
 
     def delete_image(self, node_image):
         raise NotImplementedError()
@@ -288,22 +370,22 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type vagrantfile: ``str``
 
-        :param quiet_stdout: Ignored if out_cm is not None.  If True, the stdout of
+        :keyword quiet_stdout: Ignored if out_cm is not None.  If True, the stdout of
           vagrant commands whose output is not captured for further processing
           will be sent to devnull.
         :type quiet_stdout: ``bool``
 
-        :param quiet_stderr: Ignored if out_cm is not None.  If True, the stderr of
+        :keyword quiet_stderr: Ignored if out_cm is not None.  If True, the stderr of
           vagrant commands whose output is not captured for further processing
           will be sent to devnull.
         :type quiet_stderr: ``bool``
 
-        :param env: a dict of environment variables (string keys and values) passed to
+        :keyword env: a dict of environment variables (string keys and values) passed to
           the vagrant command subprocess or None.  Defaults to None.  If env is
           None, `subprocess.Popen` uses the current process environment.
         :type env: ``dict``
 
-        :param out_cm: a no-argument function that returns a ContextManager that
+        :keyword out_cm: a no-argument function that returns a ContextManager that
           yields a filehandle or other object suitable to be passed as the
           `stdout` parameter of a subprocess that runs a vagrant command.
           Using a context manager allows one to close the filehandle in case of
@@ -314,7 +396,7 @@ class VagrantDriver(NodeDriver):
           own use, ignoring the value of `out_cm` and `quiet_stdout`.
         :type out_cm: ``() -> ContextManager -> File``
 
-        :param err_cm: a no-argument function that returns a ContextManager, like
+        :keyword err_cm: a no-argument function that returns a ContextManager, like
           out_cm, for handling the stderr of the vagrant subprocess.  Defaults
           to none_cm.
         :type err_cm: ``str``
@@ -362,22 +444,22 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type vagrantfile: ``str``
 
-        :param node: the ``Node`` object to start
+        :keyword node: the ``Node`` object to start
         :type node: ``Node``
 
-        :param no_provision: if True, disable provisioning.  Same as 'provision=False'.
+        :keyword no_provision: if True, disable provisioning.  Same as 'provision=False'.
         :type no_provision: ``bool``
 
-        :param provider: Back the machine with a specific provider
+        :keyword provider: Back the machine with a specific provider
         :type provider: ``str``
 
-        :param vm_name: name of VM.
+        :keyword vm_name: name of VM.
         :type vm_name: ``str``
 
-        :param provision_with: optional list of provisioners to enable.
+        :keyword provision_with: optional list of provisioners to enable.
         :type provision_with: ``list`` of ``str``
 
-        :param provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
+        :keyword provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type provision: ``bool``
 
         :return: starting operation result.
@@ -420,10 +502,10 @@ class VagrantDriver(NodeDriver):
         :rtype: ``bool``
         """
         return {'user': self.ex_get_vagrant(vagrantfile).user(),
-                'ssh_config': self.ex_get_vagrant(vagrantfile).ssh_config()}
+                'ssh_config': self.ex_get_vagrant(vagrantfile).conf()}
 
     @staticmethod
     def _get_vagrantfile_dir(vagrantfile):
         if vagrantfile is None:
-            return vagrantfile
+            return
         return path.dirname(vagrantfile) if path.isfile(vagrantfile) else vagrantfile

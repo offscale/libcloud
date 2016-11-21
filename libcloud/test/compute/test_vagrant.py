@@ -31,14 +31,21 @@ class VagrantMockResponses(object):
 
 
 class VagrantDriverTestCase(LibcloudTestCase):
+    vagrantfile_location = '/mnt/large_linux/vagrant/edx-fullstack'.encode('ascii')
+
     def setUp(self):
-        self.driver = VagrantDriver('None'.encode('utf8'))
+        self.driver = VagrantDriver(key='None'.encode('utf8'),
+                                    ex_vagrantfile=self.vagrantfile_location)
 
     def test_list_images(self):
-        print(self.driver.list_images())
+        print('self.driver.list_images(vagrantfile_location) =',
+              self.driver.list_images(ex_vagrantfile=self.vagrantfile_location))
 
     def test_list_nodes(self):
-        print(self.driver.list_nodes('/mnt/large_linux/vagrant/edx-fullstack'))
+        print("self.driver.list_nodes(vagrantfile_location) =",
+              self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location))
+
+        # def test_list_
 
 
 if __name__ == '__main__':
