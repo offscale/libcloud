@@ -18,7 +18,11 @@ Node driver for Vagrant.
 """
 from __future__ import print_function
 
-from os import path
+import subprocess
+from itertools import imap
+from os import path, getcwd
+
+from contrib.utils import isIpPrivate
 
 try:
     from cStringIO import StringIO
@@ -32,13 +36,15 @@ except ImportError:
 from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize
 from libcloud.compute.types import NodeState, StorageVolumeState, VolumeSnapshotState
 
-from vagrant import compat, Vagrant
+from vagrant import compat, Vagrant, get_vagrant_executable
 from vagrant2json import vagrant2dict
 
 
 class VagrantDriver(NodeDriver):
     """
     Vagrant node driver.
+
+    @inherits :class:`NodeDriver`
     """
 
     name = 'Vagrant'
@@ -65,8 +71,6 @@ class VagrantDriver(NodeDriver):
         'accomplished': VolumeSnapshotState.AVAILABLE,
         'failed': VolumeSnapshotState.ERROR}
 
-    _vagrants = {}
-
     def __init__(self, ex_vagrantfile=None, *args, **kwargs):
         """
         Instantiate VagrantDriver object
@@ -78,11 +82,10 @@ class VagrantDriver(NodeDriver):
 
         :keyword ex_vagrantfile: Vagrantfile location
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type ex_vagrantfile: ``str``
+        :type ex_vagrantfile: ``list`` of ``str``
         """
         super(VagrantDriver, self).__init__(*args, **kwargs)
-        if ex_vagrantfile is not None:
-            self.ex_add_vagrantfile(vagrantfile=ex_vagrantfile)
+        self.vagrants = Vagrantfiles([ex_vagrantfile] if isinstance(ex_vagrantfile, basestring) else ex_vagrantfile)
 
     def list_nodes(self, ex_vagrantfile=None, ex_vm_name=None, ex_provider=None):
         """
@@ -94,24 +97,26 @@ class VagrantDriver(NodeDriver):
         :type ex_provider: ``list`` of ``str``
 
         :keyword ex_vagrantfile: Vagrantfile location
-                                 default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
 
         :keyword ex_vm_name: required in a multi-VM environment.
         :type ex_vm_name: ``str``
 
         :return: list of Node
-        :rtype: ``[Node]``
+        :rtype: ``list`` of ``Node``
         """
-        self.ex_add_vagrantfile(ex_vagrantfile)
+        self.vagrants.push(ex_vagrantfile)
 
-        vagrant = self.ex_get_vagrant(ex_vagrantfile)
+        vagrant = self.vagrants[ex_vagrantfile]
 
         ssh_config = vagrant.conf(ex_vm_name)
-        # if ip_address(ssh_config['HostName']).is_private:
-        public_ips = [ssh_config['HostName'] + ssh_config['Port']]
-        # else:
-        private_ips = [ssh_config['HostName'] + ssh_config['Port']]
+        if isIpPrivate(ssh_config['HostName']):
+            public_ips = [ssh_config['HostName'] + ssh_config['Port']]
+            private_ips = []
+        else:
+            public_ips = []
+            private_ips = [ssh_config['HostName'] + ssh_config['Port']]
 
         tuple_of_status_dicts = vagrant2dict(
             StringIO(vagrant._run_vagrant_command(['global-status', '--machine-readable']))
@@ -127,10 +132,28 @@ class VagrantDriver(NodeDriver):
                             })
                 for status_dict in tuple_of_status_dicts]
 
-    def list_sizes(self, location=None):
+    def list_sizes(self, location=None, ex_vagrantfile=None):
+        """
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        :keyword location:
+        :rtype ``list`` of ``NodeSize``
+        """
         raise NotImplementedError('N/A for Vagrant')
 
-    def list_locations(self):
+    def list_locations(self, ex_vagrantfile=None):
+        """
+        @inherits :class:`NodeDriver.list_locations`
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        :rtype ``list`` of ``NodeSize``
+        """
         raise NotImplementedError('N/A for Vagrant')
 
     def create_node(self, name, size, image=None, auth=None, ex_vagrantfile=None, ex_box_url=None,
@@ -177,10 +200,14 @@ class VagrantDriver(NodeDriver):
 
         if size is not None:
             raise NotImplementedError('size for create_node')
-        vagrant = self.ex_get_vagrant(ex_vagrantfile)
-        vagrant.init(box_name=name,
-                     box_url=ex_box_url if ex_box_url is not None else image.id)
-        return self.ex_start_node(vagrantfile=ex_vagrantfile,
+        vagrantfile_loc = Vagrantfiles._get_vagrantfile_dir(ex_vagrantfile or getcwd())
+        subprocess.call([
+            get_vagrant_executable(), 'init', '{name} {box_url}'.format(
+                box_url=ex_box_url if ex_box_url is not None else image.id if image is not None and image.id else '',
+                name=path.basename(ex_vagrantfile)),
+            '--output "{vagrantfile_loc}"'.format(vagrantfile_loc=vagrantfile_loc)
+        ])
+        return self.ex_start_node(vagrantfile=vagrantfile_loc,
                                   no_provision=ex_no_provision, provider=ex_provider,
                                   vm_name=ex_vm_name, provision=ex_provision, provision_with=ex_provision_with
                                   )
@@ -205,10 +232,12 @@ class VagrantDriver(NodeDriver):
         :keyword ex_provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type ex_provision: ``bool``
         """
-        self.ex_get_vagrant(ex_vagrantfile).reload(ex_vm_name, ex_provision, ex_provision_with)
+        self.vagrants[ex_vagrantfile].reload(ex_vm_name, ex_provision, ex_provision_with)
 
     def destroy_node(self, node, ex_vagrantfile=None, ex_vm_name=None):
         """
+        @inherits :class:`NodeDriver.destroy_node`
+
         :keyword node: Not used
         :type node: ``any``
 
@@ -220,7 +249,7 @@ class VagrantDriver(NodeDriver):
                              default to ``None`` [default]
         :type ex_vm_name: ``str``
         """
-        return self.ex_get_vagrant(ex_vagrantfile).destroy(vm_name=ex_vm_name)
+        self.vagrants[ex_vagrantfile].destroy(vm_name=ex_vm_name)
 
     def list_volume_snapshots(self, volume, ex_vagrantfile=None):
         """
@@ -232,35 +261,34 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
         """
-        # TODO create a list of `VolumeSnapshot` from this
-        return self.ex_get_vagrant(ex_vagrantfile).snapshot_list()
+        # TODO parse a list of `VolumeSnapshot` from this
+        return self.vagrants[ex_vagrantfile].snapshot_list()
 
-    def create_volume(self, size, name, location=None, snapshot=None):
+    def create_volume(self, size, name, location=None, snapshot=None, ex_vagrantfile=None):
         """
         Create a new volume.
 
         @inherites :class:`NodeDriver.create_volume`
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
 
-    def create_volume_snapshot(self, volume, name=None, ex_description=None,
-                               ex_client_token=None):
+    def create_volume_snapshot(self, volume, name=None, ex_vagrantfile=None):
         """
         Creates a snapshot of the storage volume.
 
         @inherits :class:`NodeDriver.create_volume_snapshot`
 
-        :keyword ex_description: description of the snapshot.
-        :type ex_description: ``unicode``
-
-        :keyword ex_client_token: a token generated by client to identify
-                                  each request.
-        :type ex_client_token: ``str``
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
 
-    def attach_volume(self, node, volume, device=None,
-                      ex_delete_with_instance=None):
+    def attach_volume(self, node, volume, device=None, ex_vagrantfile=None):
         """
         Attaches volume to node.
 
@@ -269,13 +297,13 @@ class VagrantDriver(NodeDriver):
         :keyword device: device path allocated for this attached volume
         :type device: ``str`` between /dev/xvdb to xvdz,
                       if empty, allocated by the system
-        :keyword ex_delete_with_instance: if to delete this volume when the
-                                          instance is deleted.
-        :type ex_delete_with_instance: ``bool``
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
 
-    def detach_volume(self, volume, ex_instance_id=None):
+    def detach_volume(self, volume, ex_instance_id=None, ex_vagrantfile=None):
         """
         Detaches a volume from a node.
 
@@ -284,13 +312,43 @@ class VagrantDriver(NodeDriver):
         :keyword ex_instance_id: the id of the instance from which the volume
                                  is detached.
         :type ex_instance_id: ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
 
-    def destroy_volume(self, volume):
+    def destroy_volume(self, volume, ex_vagrantfile=None):
+        """
+        Destroys a volume from a node.
+
+        @inherits :class:`NodeDriver.destroy_volume`
+
+        :keyword volume:
+        :type volume: ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                      default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        """
         raise NotImplementedError()
 
-    def destroy_volume_snapshot(self, snapshot):
+    def destroy_volume_snapshot(self, snapshot, ex_vagrantfile=None):
+        """
+        Destroys a volume snapshot from a node.
+
+        @inherits :class:`NodeDriver.destory_volume_snapshot`
+
+        :keyword snapshot:
+        :type snapshot: ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                      default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        """
         raise NotImplementedError()
 
     ##
@@ -321,10 +379,10 @@ class VagrantDriver(NodeDriver):
                           driver=VagrantDriver,
                           extra={'provider': box.provider,
                                  'version': box.version})
-                for box in self.ex_get_vagrant(ex_vagrantfile).box_list()]
+                for box in self.vagrants[ex_vagrantfile].box_list()]
 
     def create_image(self, node, name, description=None, ex_snapshot_id=None,
-                     ex_image_version=None):
+                     ex_image_version=None, ex_vagrantfile=None):
         """
         Creates an image from a system disk snapshot.
 
@@ -336,35 +394,155 @@ class VagrantDriver(NodeDriver):
 
         :keyword ex_image_version: the version number of the image
         :type ex_image_version: ``str``
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
         # Maybe look at Packer?
 
-    def delete_image(self, node_image):
+    def delete_image(self, node_image, ex_vagrantfile=None):
+        """
+        @inherits :class:`NodeDriver.delete_image`
+
+        :keyword node_image:
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+        """
         raise NotImplementedError()
 
-    def get_image(self, image_id, ex_region_id=None):
+    def get_image(self, image_id, ex_region_id=None, ex_vagrantfile=None):
+        """
+        @inherits :class:`NodeDriver.get_image`
+
+        :keyword image_id:
+        :keyword ex_region_id:
+
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        :return: `NodeImage`
+        """
         raise NotImplementedError()
 
     def copy_image(self, source_region, node_image, name, description=None,
-                   ex_destination_region_id=None, ex_client_token=None):
+                   ex_vagrantfile=None):
         """
         Copies an image from a source region to the destination region.
         If not provide a destination region, default to the current region.
 
         @inherits :class:`NodeDriver.copy_image`
 
-        :keyword ex_destination_region_id: id of the destination region
-        :type ex_destination_region_id: ``str``
-
-        :keyword ex_client_token: a token generated by client to identify
-                                  each request.
-        :type ex_client_token: ``str``
+        :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
         """
         raise NotImplementedError()
 
-    def ex_add_vagrantfile(self, vagrantfile=None, quiet_stdout=True, quiet_stderr=True,
-                           env=None, out_cm=None, err_cm=None):
+    def ex_start_node(self, vagrantfile, no_provision=False, provider=None, vm_name=None,
+                      provision=None, provision_with=None):
+        """
+        Start node to running state.
+
+        :keyword vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+
+        :keyword node: the ``Node`` object to start
+        :type node: ``Node``
+
+        :keyword no_provision: if True, disable provisioning.  Same as 'provision=False'.
+        :type no_provision: ``bool``
+
+        :keyword provider: Back the machine with a specific provider
+        :type provider: ``str``
+
+        :keyword vm_name: name of VM.
+        :type vm_name: ``str``
+
+        :keyword provision_with: optional list of provisioners to enable.
+        :type provision_with: ``list`` of ``str``
+
+        :keyword provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
+        :type provision: ``bool``
+        """
+        self.vagrants[vagrantfile].up(no_provision, provider, vm_name, provision, provision_with)
+
+    def ex_stop_node(self, vagrantfile, vm_name=None, ex_force_stop=False):
+        """
+        Stop a running node.
+
+        :keyword vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+
+        :keyword ex_force_stop: if ``True``, stop node force (maybe lose data)
+                                otherwise, stop node normally,
+                                default to ``False``
+        :type ex_force_stop: ``bool``
+        """
+        self.vagrants[vagrantfile].halt(vm_name, ex_force_stop)
+
+    def ex_get_conn_info(self, vagrantfile, vm_name=None, ex_force_stop=False):
+        """
+        Get connection information. Usually provided in the Node object.
+
+        :keyword vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+
+        :keyword ex_force_stop: if ``True``, stop node force (maybe lose data)
+                                otherwise, stop node normally,
+                                default to ``False``
+        :type ex_force_stop: ``bool``
+
+        :return: stopping operation result.
+        :rtype: ``{ user: string, ssh_config: {} }``
+        """
+        vagrant = self.vagrants[vagrantfile]
+        return {'user': vagrant.user(), 'ssh_config': vagrant.conf()}
+
+
+class Vagrantfiles(object):
+    def __init__(self, vagrantfiles):
+        """
+        Instantiate Vagrantfiles object
+
+        :keyword vagrantfiles: Vagrantfile locations
+        :type ex_vagrantfile: ``list`` of ``str``
+        """
+        self.vagrantfiles = dict(imap(lambda vagrantfile: (vagrantfile, self.push(vagrantfile)), vagrantfiles)
+                                 ) if vagrantfiles else {}
+
+    def __getitem__(self, vagrantfile):
+        """
+        Return Vagrant object at vagrantfile location
+
+        :keyword vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+
+        :return: Vagrant object
+        :rtype: ``vagrant.Vagrant``
+        """
+        return self.vagrantfiles[self._get_vagrantfile_dir(vagrantfile or getcwd())]
+
+    def __delitem__(self, vagrantfile):
+        """
+        Delete Vagrant object stored in memory that matches arg
+
+        :keyword vagrantfile: Vagrantfile location
+                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+        """
+        del self.vagrantfiles[self._get_vagrantfile_dir(vagrantfile or getcwd())]
+
+    def push(self, vagrantfile=None, quiet_stdout=True, quiet_stderr=True,
+             env=None, out_cm=None, err_cm=None):
         """
         :keyword vagrantfile: Vagrantfile location
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
@@ -401,111 +579,26 @@ class VagrantDriver(NodeDriver):
           to none_cm.
         :type err_cm: ``str``
         """
-        vagrant_dir = self._get_vagrantfile_dir(vagrantfile)
-        self._vagrants.update({vagrant_dir: Vagrant(root=vagrant_dir, quiet_stdout=quiet_stdout,
-                                                    quiet_stderr=quiet_stderr,
-                                                    env=env, out_cm=out_cm, err_cm=err_cm)})
+        vagrant_dir = self._get_vagrantfile_dir(vagrantfile or getcwd())
+        self.vagrantfiles.update({vagrant_dir: Vagrant(root=vagrant_dir, quiet_stdout=quiet_stdout,
+                                                       quiet_stderr=quiet_stderr,
+                                                       env=env, out_cm=out_cm, err_cm=err_cm)})
 
-    def ex_del_vagrantfile(self, vagrantfile=None):
-        """
-        Delete Vagrant object stored in memory that matches arg
-
-        :keyword vagrantfile: Vagrantfile location
-                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type vagrantfile: ``str``
-        """
-        del self._vagrants[self._get_vagrantfile_dir(vagrantfile)]
-
-    def ex_clear_vagrantfiles(self):
+    def clear(self):
         """
         Delete all Vagrant objects stored in memory
         """
-        self._vagrants.clear()
-
-    def ex_get_vagrant(self, vagrantfile=None):
-        """
-        Return Vagrant object of root
-
-        :keyword vagrantfile: Vagrantfile location
-                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type vagrantfile: ``str``
-
-        :return: Vagrant object
-        :rtype: ``vagrant.Vagrant``
-        """
-        return self._vagrants[self._get_vagrantfile_dir(vagrantfile)]
-
-    def ex_start_node(self, vagrantfile, no_provision=False, provider=None, vm_name=None,
-                      provision=None, provision_with=None):
-        """
-        Start node to running state.
-
-        :keyword vagrantfile: Vagrantfile location
-                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type vagrantfile: ``str``
-
-        :keyword node: the ``Node`` object to start
-        :type node: ``Node``
-
-        :keyword no_provision: if True, disable provisioning.  Same as 'provision=False'.
-        :type no_provision: ``bool``
-
-        :keyword provider: Back the machine with a specific provider
-        :type provider: ``str``
-
-        :keyword vm_name: name of VM.
-        :type vm_name: ``str``
-
-        :keyword provision_with: optional list of provisioners to enable.
-        :type provision_with: ``list`` of ``str``
-
-        :keyword provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
-        :type provision: ``bool``
-
-        :return: starting operation result.
-        :rtype: ``bool``
-        """
-        return self.ex_get_vagrant(vagrantfile).up(no_provision, provider, vm_name, provision, provision_with)
-
-    def ex_stop_node(self, vagrantfile, vm_name=None, ex_force_stop=False):
-        """
-        Stop a running node.
-
-        :keyword vagrantfile: Vagrantfile location
-                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type vagrantfile: ``str``
-
-        :keyword ex_force_stop: if ``True``, stop node force (maybe lose data)
-                                otherwise, stop node normally,
-                                default to ``False``
-        :type ex_force_stop: ``bool``
-
-        :return: stopping operation result.
-        :rtype: ``bool``
-        """
-        return self.ex_get_vagrant(vagrantfile).halt(vm_name, ex_force_stop)
-
-    def ex_get_conn_info(self, vagrantfile, vm_name=None, ex_force_stop=False):
-        """
-        Get connection information. Usually provided in the Node object.
-
-        :keyword vagrantfile: Vagrantfile location
-                              default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type vagrantfile: ``str``
-
-        :keyword ex_force_stop: if ``True``, stop node force (maybe lose data)
-                                otherwise, stop node normally,
-                                default to ``False``
-        :type ex_force_stop: ``bool``
-
-        :return: stopping operation result.
-        :rtype: ``bool``
-        """
-        return {'user': self.ex_get_vagrant(vagrantfile).user(),
-                'ssh_config': self.ex_get_vagrant(vagrantfile).conf()}
+        self.vagrantfiles.clear()
 
     @staticmethod
     def _get_vagrantfile_dir(vagrantfile):
+        """
+        Given a ``vagrantfile`` argument, resolves its directory (or itself if it is a directory).
+
+        :keyword vagrantfile: Vagrantfile location
+                              If a filepath is given, its dir is resolved.
+        :type vagrantfile: ``str``
+        """
         if vagrantfile is None:
             return
         return path.dirname(vagrantfile) if path.isfile(vagrantfile) else vagrantfile
