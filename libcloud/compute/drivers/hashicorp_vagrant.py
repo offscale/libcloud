@@ -16,13 +16,12 @@
 """
 Node driver for Vagrant.
 """
-from __future__ import print_function
-
 import subprocess
 from itertools import imap
 from os import path, getcwd
 
 from contrib.utils import isIpPrivate
+from libcloud.common.types import LibcloudError
 
 try:
     from cStringIO import StringIO
@@ -107,10 +106,14 @@ class VagrantDriver(NodeDriver):
         :rtype: ``list`` of ``Node``
         """
         self.vagrants.push(ex_vagrantfile)
-
         vagrant = self.vagrants[ex_vagrantfile]
 
-        ssh_config = vagrant.conf(ex_vm_name)
+        try:
+            ssh_config = vagrant.conf(ex_vm_name)
+        except subprocess.CalledProcessError as e:
+            raise LibcloudError(value='[{e.cmd} {e.args}] $?={e.returncode} {e.output}: {e.message}'.format(e=e),
+                                driver=VagrantDriver)
+
         if isIpPrivate(ssh_config['HostName']):
             public_ips = [ssh_config['HostName'] + ssh_config['Port']]
             private_ips = []
@@ -134,6 +137,7 @@ class VagrantDriver(NodeDriver):
 
     def list_sizes(self, location=None, ex_vagrantfile=None):
         """
+        @inherits :class:`NodeDriver.list_sizes`
 
         :keyword ex_vagrantfile: Vagrantfile location
                                      default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
@@ -232,6 +236,7 @@ class VagrantDriver(NodeDriver):
         :keyword ex_provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type ex_provision: ``bool``
         """
+        self.vagrants.push(ex_vagrantfile)
         self.vagrants[ex_vagrantfile].reload(ex_vm_name, ex_provision, ex_provision_with)
 
     def destroy_node(self, node, ex_vagrantfile=None, ex_vm_name=None):
@@ -249,6 +254,7 @@ class VagrantDriver(NodeDriver):
                              default to ``None`` [default]
         :type ex_vm_name: ``str``
         """
+        self.vagrants.push(ex_vagrantfile)
         self.vagrants[ex_vagrantfile].destroy(vm_name=ex_vm_name)
 
     def list_volume_snapshots(self, volume, ex_vagrantfile=None):
@@ -261,8 +267,8 @@ class VagrantDriver(NodeDriver):
                               default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
         """
-        # TODO parse a list of `VolumeSnapshot` from this
-        return self.vagrants[ex_vagrantfile].snapshot_list()
+        self.vagrants.push(ex_vagrantfile)
+        return self.vagrants[ex_vagrantfile].snapshot_list()  # TODO parse a list of `VolumeSnapshot` from this
 
     def create_volume(self, size, name, location=None, snapshot=None, ex_vagrantfile=None):
         """
@@ -375,6 +381,7 @@ class VagrantDriver(NodeDriver):
         if ex_provider:
             raise NotImplementedError('ex_provider is not yet implemented, TODO')
 
+        self.vagrants.push(ex_vagrantfile)
         return [NodeImage(id=box.name, name=box.name,
                           driver=VagrantDriver,
                           extra={'provider': box.provider,
@@ -470,6 +477,7 @@ class VagrantDriver(NodeDriver):
         :keyword provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type provision: ``bool``
         """
+        self.vagrants.push(vagrantfile)
         self.vagrants[vagrantfile].up(no_provision, provider, vm_name, provision, provision_with)
 
     def ex_stop_node(self, vagrantfile, vm_name=None, ex_force_stop=False):
@@ -485,6 +493,7 @@ class VagrantDriver(NodeDriver):
                                 default to ``False``
         :type ex_force_stop: ``bool``
         """
+        self.vagrants.push(vagrantfile)
         self.vagrants[vagrantfile].halt(vm_name, ex_force_stop)
 
     def ex_get_conn_info(self, vagrantfile, vm_name=None, ex_force_stop=False):
@@ -503,11 +512,14 @@ class VagrantDriver(NodeDriver):
         :return: stopping operation result.
         :rtype: ``{ user: string, ssh_config: {} }``
         """
+        self.vagrants.push(vagrantfile)
         vagrant = self.vagrants[vagrantfile]
         return {'user': vagrant.user(), 'ssh_config': vagrant.conf()}
 
 
 class Vagrantfiles(object):
+    vagrantfiles = {}
+
     def __init__(self, vagrantfiles):
         """
         Instantiate Vagrantfiles object
@@ -530,6 +542,18 @@ class Vagrantfiles(object):
         :rtype: ``vagrant.Vagrant``
         """
         return self.vagrantfiles[self._get_vagrantfile_dir(vagrantfile or getcwd())]
+
+    def __setitem__(self, vagrantfile, vagrant_obj):
+        """
+        Sets Vagrant object
+
+        :keyword vagrantfile: Vagrantfile location
+        :type vagrantfile: ``str``
+
+        :keyword vagrant_obj: Vagrant object
+        :type vagrant_obj: ``Vagrant``
+        """
+        self.vagrantfiles.update({vagrantfile: vagrant_obj})
 
     def __delitem__(self, vagrantfile):
         """
@@ -580,9 +604,9 @@ class Vagrantfiles(object):
         :type err_cm: ``str``
         """
         vagrant_dir = self._get_vagrantfile_dir(vagrantfile or getcwd())
-        self.vagrantfiles.update({vagrant_dir: Vagrant(root=vagrant_dir, quiet_stdout=quiet_stdout,
-                                                       quiet_stderr=quiet_stderr,
-                                                       env=env, out_cm=out_cm, err_cm=err_cm)})
+        self[vagrant_dir] = Vagrant(root=vagrant_dir, quiet_stdout=quiet_stdout,
+                                    quiet_stderr=quiet_stderr,
+                                    env=env, out_cm=out_cm, err_cm=err_cm)
 
     def clear(self):
         """

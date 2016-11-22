@@ -13,11 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import unicode_literals
+from __future__ import unicode_literals, print_function
 
 import sys
 import unittest
 
+from libcloud.compute.base import NodeImage, Node
 from libcloud.compute.drivers.hashicorp_vagrant import VagrantDriver
 from .. import LibcloudTestCase
 
@@ -40,12 +41,15 @@ class VagrantDriverTestCase(LibcloudTestCase):
     def test_list_images(self):
         print('self.driver.list_images(vagrantfile_location) =',
               self.driver.list_images(ex_vagrantfile=self.vagrantfile_location))
+        for image in self.driver.list_images(ex_vagrantfile=self.vagrantfile_location):
+            self.assertIsInstance(image, NodeImage)
 
     def test_list_nodes(self):
         print("self.driver.list_nodes(vagrantfile_location) =",
               self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location))
 
-        # def test_list_
+        for node in self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location):
+            self.assertIsInstance(node, Node)
 
 
 if __name__ == '__main__':
