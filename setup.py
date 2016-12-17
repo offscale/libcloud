@@ -254,7 +254,7 @@ class CoverageCommand(Command):
 
 forbid_publish()
 
-install_requires = ['python-vagrant', 'vagrant2json']
+install_requires = []
 if PY2_pre_26:
     install_requires.extend(['ssl', 'simplejson'])
 

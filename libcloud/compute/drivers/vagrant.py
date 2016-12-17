@@ -22,6 +22,7 @@ from os import path, getcwd
 
 from contrib.utils import isIpPrivate
 from libcloud.common.types import LibcloudError
+from libcloud.common.vagrant import Vagrant, get_vagrant_executable
 
 try:
     from cStringIO import StringIO
@@ -34,9 +35,6 @@ except ImportError:
 
 from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize
 from libcloud.compute.types import NodeState, StorageVolumeState, VolumeSnapshotState
-
-from vagrant import compat, Vagrant, get_vagrant_executable
-from vagrant2json import vagrant2dict
 
 
 class VagrantDriver(NodeDriver):

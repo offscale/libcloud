@@ -19,7 +19,7 @@ import sys
 import unittest
 
 from libcloud.compute.base import NodeImage, Node
-from libcloud.compute.drivers.hashicorp_vagrant import VagrantDriver
+from libcloud.compute.drivers.vagrant import VagrantDriver
 from .. import LibcloudTestCase
 
 
