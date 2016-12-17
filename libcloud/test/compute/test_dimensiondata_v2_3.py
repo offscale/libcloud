@@ -40,9 +40,10 @@ from libcloud.test.secrets import DIMENSIONDATA_PARAMS
 from libcloud.utils.xml import fixxpath, findtext, findall
 
 
-class DimensionDataTests(unittest.TestCase, TestCaseMixin):
+class DimensionData_v2_3_Tests(unittest.TestCase, TestCaseMixin):
 
     def setUp(self):
+        DimensionData.connectionCls.active_api_version = '2.3'
         DimensionData.connectionCls.conn_classes = (None, DimensionDataMockHttp)
         DimensionData.connectionCls.rawResponseCls = \
             DimensionDataMockRawResponse
@@ -1622,11 +1623,11 @@ class DimensionDataTests(unittest.TestCase, TestCaseMixin):
             self.driver._location_to_location_id([1, 2, 3])
 
     def test_priv_image_needs_auth_os_img(self):
-        image = self.driver.list_images()[0]
+        image = self.driver.list_images()[1]
         self.assertTrue(self.driver._image_needs_auth(image))
 
     def test_priv_image_needs_auth_os_img_STR(self):
-        image = self.driver.list_images()[0].id
+        image = self.driver.list_images()[1].id
         self.assertTrue(self.driver._image_needs_auth(image))
 
     def test_priv_image_needs_auth_cust_img_windows(self):
