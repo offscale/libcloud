@@ -10,6 +10,14 @@ Compute
 
 - Added new CloudScale.ch driver
 
+- [google compute] Bug fix for ex_create_multiple_nodes Google Cloud disk auto delete
+  (GITHUB-955)
+  [John Baublitz]
+
+- [google compute] Add "MULTI_IP_SUBNET" guestOsFeatures option.
+  (GITHUB-956)
+  [Max Illfelder]
+
 - [dimensiondata] Added support for 2.4 API, added support for image import, cloning. Add feature for changing NIC VLANs, add feature for changing
   NIC order for a server.
   (GITHUB-953)
@@ -110,6 +118,10 @@ Load Balancing
 - Introduce AWS Application Load Balancer (ALB) driver
   (LIBCLOUD-869, GITHUB-936)
   [Anton Kozyrev]
+
+- Fix bug where GCE Load balancer supposes that all VMs have public ips
+  (LIBCLOUD-879, GITHUB-952)
+  [Chris Walker]
 
 Storage
 ~~~~~~~
