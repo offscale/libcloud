@@ -19,8 +19,8 @@ import sys
 import unittest
 
 from libcloud.compute.base import NodeImage, Node
-from libcloud.compute.drivers.vagrant import VagrantDriver
-from libcloud.common.vagrant import obj_to_d
+from libcloud.compute.drivers.vagrant import VagrantNodeDriver
+from libcloud.common.vagrant import obj_to_d, pp
 from libcloud.test import LibcloudTestCase
 from libcloud.utils.py3 import ensure_string
 
@@ -38,8 +38,7 @@ class VagrantDriverTestCase(LibcloudTestCase):
     driver = None
 
     def setUp(self):
-        self.driver = VagrantDriver(key=None,
-                                    ex_vagrantfile=self.vagrantfile_location)
+        self.driver = VagrantNodeDriver(key=None, ex_vagrantfile=self.vagrantfile_location)
 
     def test_list_images(self):
         for image in self.driver.list_images(ex_vagrantfile=self.vagrantfile_location):
@@ -47,6 +46,7 @@ class VagrantDriverTestCase(LibcloudTestCase):
 
     def test_list_nodes(self):
         for node in self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location):
+            # pp(obj_to_d(node))
             self.assertIsInstance(node, Node)
 
 

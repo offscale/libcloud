@@ -49,7 +49,7 @@ else:
 #########################
 # Basic utility functions
 
-# Is there not a global libcloud logger?!
+# Is there not a global libcloud logger?! - TODO: Trackback to enable_debug in libcloud.__init__
 logging.basicConfig(format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s', level='INFO')
 ''' # If you want to log to `stdout` rather than `stderr`
 handler = logging.root.handlers.pop()
@@ -66,6 +66,15 @@ def obj_to_d(obj):
 
 
 pp = PrettyPrinter(indent=4).pprint
+
+
+def isIpPrivate(ip):
+    priv_lo = re.compile("^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+    priv_24 = re.compile("^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+    priv_20 = re.compile("^192\.168\.\d{1,3}.\d{1,3}$")
+    priv_16 = re.compile("^172.(1[6-9]|2[0-9]|3[0-1]).[0-9]{1,3}.[0-9]{1,3}$")
+    return priv_lo.match(ip) or priv_24.match(ip) or priv_20.match(ip) or priv_16.match(ip)
+
 
 # This env var seems to be used by other parts of apache-libcloud
 if 'LIBCLOUD_DEBUG' in os.environ:

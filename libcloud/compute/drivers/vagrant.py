@@ -21,9 +21,8 @@ from itertools import imap
 from os import path, getcwd
 import logging
 
-from contrib.utils import isIpPrivate
 from libcloud.common.types import LibcloudError
-from libcloud.common.vagrant import Vagrant, get_vagrant_executable, StreamLogger, LevelRangeFilter, pp
+from libcloud.common.vagrant import Vagrant, get_vagrant_executable, StreamLogger, LevelRangeFilter, pp, isIpPrivate
 
 try:
     from cStringIO import StringIO
@@ -40,7 +39,7 @@ from libcloud.compute.types import NodeState, StorageVolumeState, VolumeSnapshot
 log = logging.getLogger(__name__)
 
 
-class VagrantDriver(NodeDriver):
+class VagrantNodeDriver(NodeDriver):
     """
     Vagrant node driver.
 
@@ -84,7 +83,7 @@ class VagrantDriver(NodeDriver):
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``list`` of ``str`` or ``str``
         """
-        super(VagrantDriver, self).__init__(*args, **kwargs)
+        super(VagrantNodeDriver, self).__init__(ex_vagrantfile=ex_vagrantfile, *args, **kwargs)
         self.vagrants = Vagrantfiles([ex_vagrantfile] if isinstance(ex_vagrantfile, basestring) else ex_vagrantfile)
 
     def list_nodes(self, ex_vagrantfile=None, ex_vm_name=None, ex_provider=None):
@@ -145,27 +144,29 @@ class VagrantDriver(NodeDriver):
             public_ips = []
             extra = {}
             try:
-                ssh_config = _vagrant.conf(vm_name=globalStatus.id or ex_vm_name)
-                if isIpPrivate(ssh_config['HostName']):
-                    public_ips = [ssh_config['HostName'] + ssh_config['Port']]
+                ssh_config = _vagrant.conf(vm_name=globalStatus.id)
+                hostname = vagrant.hostname(vm_name=globalStatus.id)
+                if isIpPrivate(hostname):
+                    private_ips = [hostname]
+                    public_ips = [hostname]  # Hmm, I think for Vagrant we should set this?
                 else:
-                    private_ips = [ssh_config['HostName'] + ssh_config['Port']]
-                extra = {'user': _vagrant.user(vm_name=globalStatus.id or ex_vm_name
-                                               ) if ssh_config is not None else ssh_config,
-                         'ssh_config': ssh_config}
+                    public_ips = [hostname]
+                extra = {'user': _vagrant.user(vm_name=globalStatus.id) if ssh_config is not None else ssh_config,
+                         'ssh_config': ssh_config,
+                         'user_hostname_port': vagrant.user_hostname_port(vm_name=globalStatus.id)}
             except subprocess.CalledProcessError as e:
                 log.exception(LibcloudError(value='CalledProcessError(cmd={e.cmd}, args={e.args},'
                                                   ' returncode={e.returncode}, stdout={stdout!r},'
                                                   ' stderr={stderr!r})'.format(e=e,
                                                                                stderr=_stderr_stream.stream.getvalue(),
                                                                                stdout=_stdout_stream.stream.getvalue()),
-                                            driver=VagrantDriver))
+                                            driver=VagrantNodeDriver))
             finally:
                 _vagrant.err_cm.close()
                 _vagrant.out_cm.close()
 
                 return Node(id=globalStatus.id, name=globalStatus.name,
-                            state=globalStatus.state, driver=VagrantDriver,
+                            state=globalStatus.state, driver=VagrantNodeDriver,
                             public_ips=public_ips, private_ips=private_ips,
                             extra=dict(provider=globalStatus.provider,
                                        directory=globalStatus.directory, **extra))
@@ -426,7 +427,7 @@ class VagrantDriver(NodeDriver):
 
         self.vagrants.push(ex_vagrantfile)
         return [NodeImage(id=box.name, name=box.name,
-                          driver=VagrantDriver,
+                          driver=VagrantNodeDriver,
                           extra={'provider': box.provider,
                                  'version': box.version})
                 for box in self.vagrants[ex_vagrantfile].box_list()]

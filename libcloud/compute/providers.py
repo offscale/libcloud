@@ -143,6 +143,8 @@ DRIVERS = {
     ('libcloud.compute.drivers.ecs', 'ECSDriver'),
     Provider.CLOUDSCALE:
     ('libcloud.compute.drivers.cloudscale', 'CloudscaleNodeDriver'),
+    Provider.VAGRANT:
+        ('libcloud.compute.drivers.vagrant', 'VagrantNodeDriver'),
 }
 
 
