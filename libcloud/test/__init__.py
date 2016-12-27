@@ -15,6 +15,7 @@
 
 import sys
 import random
+from unittest.util import safe_repr
 
 from libcloud.utils.py3 import httplib
 from libcloud.utils.py3 import StringIO
@@ -54,6 +55,20 @@ class LibcloudTestCase(unittest.TestCase):
         self.assertEqual(actual, expected,
                          'expected %d, but %d mock methods were executed'
                          % (expected, actual))
+
+    # Python =< 2.6 compatibility
+    def assertIsInstance(self, obj, cls, msg=None):
+        """Same as self.assertTrue(isinstance(obj, cls)), with a nicer
+        default message."""
+        if not isinstance(obj, cls):
+            standardMsg = '%s is not an instance of %r' % (safe_repr(obj), cls)
+            self.fail(self._formatMessage(msg, standardMsg))
+
+    def assertGreater(self, a, b, msg=None):
+        """Just like self.assertTrue(a > b), but with a nicer default message."""
+        if not a > b:
+            standardMsg = '%s not greater than %s' % (safe_repr(a), safe_repr(b))
+            self.fail(self._formatMessage(msg, standardMsg))
 
 
 class multipleresponse(object):

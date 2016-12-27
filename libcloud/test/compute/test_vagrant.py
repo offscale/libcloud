@@ -13,14 +13,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import unicode_literals, print_function
+from __future__ import print_function, absolute_import
 
 import sys
 import unittest
 
 from libcloud.compute.base import NodeImage, Node
 from libcloud.compute.drivers.vagrant import VagrantDriver
-from .. import LibcloudTestCase
+from libcloud.common.vagrant import obj_to_d
+from libcloud.test import LibcloudTestCase
+from libcloud.utils.py3 import ensure_string
 
 
 class VagrantMockResponses(object):
@@ -32,22 +34,18 @@ class VagrantMockResponses(object):
 
 
 class VagrantDriverTestCase(LibcloudTestCase):
-    vagrantfile_location = '/mnt/large_linux/vagrant/edx-fullstack'.encode('ascii')
+    vagrantfile_location = ensure_string('/mnt/large_linux/vagrant/edx-fullstack')
+    driver = None
 
     def setUp(self):
-        self.driver = VagrantDriver(key='None'.encode('utf8'),
+        self.driver = VagrantDriver(key=None,
                                     ex_vagrantfile=self.vagrantfile_location)
 
     def test_list_images(self):
-        print('self.driver.list_images(vagrantfile_location) =',
-              self.driver.list_images(ex_vagrantfile=self.vagrantfile_location))
         for image in self.driver.list_images(ex_vagrantfile=self.vagrantfile_location):
             self.assertIsInstance(image, NodeImage)
 
     def test_list_nodes(self):
-        print("self.driver.list_nodes(vagrantfile_location) =",
-              self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location))
-
         for node in self.driver.list_nodes(ex_vagrantfile=self.vagrantfile_location):
             self.assertIsInstance(node, Node)
 

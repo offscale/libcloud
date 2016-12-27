@@ -19,10 +19,11 @@ Node driver for Vagrant.
 import subprocess
 from itertools import imap
 from os import path, getcwd
+import logging
 
 from contrib.utils import isIpPrivate
 from libcloud.common.types import LibcloudError
-from libcloud.common.vagrant import Vagrant, get_vagrant_executable
+from libcloud.common.vagrant import Vagrant, get_vagrant_executable, StreamLogger, LevelRangeFilter, pp
 
 try:
     from cStringIO import StringIO
@@ -35,6 +36,8 @@ except ImportError:
 
 from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize
 from libcloud.compute.types import NodeState, StorageVolumeState, VolumeSnapshotState
+
+log = logging.getLogger(__name__)
 
 
 class VagrantDriver(NodeDriver):
@@ -79,7 +82,7 @@ class VagrantDriver(NodeDriver):
 
         :keyword ex_vagrantfile: Vagrantfile location
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
-        :type ex_vagrantfile: ``list`` of ``str``
+        :type ex_vagrantfile: ``list`` of ``str`` or ``str``
         """
         super(VagrantDriver, self).__init__(*args, **kwargs)
         self.vagrants = Vagrantfiles([ex_vagrantfile] if isinstance(ex_vagrantfile, basestring) else ex_vagrantfile)
@@ -94,7 +97,7 @@ class VagrantDriver(NodeDriver):
         :type ex_provider: ``list`` of ``str``
 
         :keyword ex_vagrantfile: Vagrantfile location
-                                     default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+                                     default to ``None`` [global]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``str``
 
         :keyword ex_vm_name: required in a multi-VM environment.
@@ -103,35 +106,77 @@ class VagrantDriver(NodeDriver):
         :return: list of Node
         :rtype: ``list`` of ``Node``
         """
-        self.vagrants.push(ex_vagrantfile)
-        vagrant = self.vagrants[ex_vagrantfile]
 
-        try:
-            ssh_config = vagrant.conf(ex_vm_name)
-        except subprocess.CalledProcessError as e:
-            raise LibcloudError(value='[{e.cmd} {e.args}] $?={e.returncode} {e.output}: {e.message}'.format(e=e),
-                                driver=VagrantDriver)
+        def get_vagrant_obj(ex_vagrantfile, globalStatus=None):
+            """
+            :keyword ex_vagrantfile: Vagrantfile location
+                                     default to ``None`` [global]. If a filepath is given, its dir is resolved.
+            :type ex_vagrantfile: ``str`` or ``None``
 
-        if isIpPrivate(ssh_config['HostName']):
-            public_ips = [ssh_config['HostName'] + ssh_config['Port']]
+            :keyword globalStatus: GlobalStatus object default to ``None``.
+            :type globalStatus: ``GlobalStatus``
+            """
+            if ex_vagrantfile is None and globalStatus is not None:
+                ex_vagrantfile = ex_vagrantfile
+
+            _stderr_stream = logging.StreamHandler(StringIO())
+            _stderr_stream.addFilter(LevelRangeFilter(logging.ERROR, None))
+            log.addHandler(_stderr_stream)
+            log.setLevel(logging.ERROR)
+
+            _stdout_stream = logging.StreamHandler(StringIO())
+            _stdout_stream.addFilter(LevelRangeFilter(logging.INFO, logging.ERROR))
+            log.addHandler(_stdout_stream)
+            log.setLevel(logging.INFO)
+
+            self.vagrants.push(ex_vagrantfile,
+                               err_cm=StreamLogger(log, logging.ERROR),
+                               out_cm=StreamLogger(log, logging.INFO))
+            return self.vagrants[ex_vagrantfile], _stderr_stream, _stdout_stream
+
+        def get_node(globalStatus):
+            """
+            :keyword globalStatus: GlobalStatus object
+            :type globalStatus: ``GlobalStatus``
+            """
+            _vagrant, _stderr_stream, _stdout_stream = get_vagrant_obj(None, globalStatus)
+
             private_ips = []
-        else:
             public_ips = []
-            private_ips = [ssh_config['HostName'] + ssh_config['Port']]
+            extra = {}
+            try:
+                ssh_config = _vagrant.conf(vm_name=globalStatus.id or ex_vm_name)
+                if isIpPrivate(ssh_config['HostName']):
+                    public_ips = [ssh_config['HostName'] + ssh_config['Port']]
+                else:
+                    private_ips = [ssh_config['HostName'] + ssh_config['Port']]
+                extra = {'user': _vagrant.user(vm_name=globalStatus.id or ex_vm_name
+                                               ) if ssh_config is not None else ssh_config,
+                         'ssh_config': ssh_config}
+            except subprocess.CalledProcessError as e:
+                log.exception(LibcloudError(value='CalledProcessError(cmd={e.cmd}, args={e.args},'
+                                                  ' returncode={e.returncode}, stdout={stdout!r},'
+                                                  ' stderr={stderr!r})'.format(e=e,
+                                                                               stderr=_stderr_stream.stream.getvalue(),
+                                                                               stdout=_stdout_stream.stream.getvalue()),
+                                            driver=VagrantDriver))
+            finally:
+                _vagrant.err_cm.close()
+                _vagrant.out_cm.close()
 
-        tuple_of_status_dicts = vagrant2dict(
-            StringIO(vagrant._run_vagrant_command(['global-status', '--machine-readable']))
-        )
+                return Node(id=globalStatus.id, name=globalStatus.name,
+                            state=globalStatus.state, driver=VagrantDriver,
+                            public_ips=public_ips, private_ips=private_ips,
+                            extra=dict(provider=globalStatus.provider,
+                                       directory=globalStatus.directory, **extra))
 
-        return [Node(id=status_dict['id'], name=status_dict['name'],
-                     state=status_dict['state'], driver=VagrantDriver,
-                     public_ips=public_ips, private_ips=private_ips,
-                     extra={'provider': status_dict['provider'],
-                            'directory': status_dict['directory'],
-                            'user': vagrant.user(ex_vm_name),
-                            'ssh_config': ssh_config
-                            })
-                for status_dict in tuple_of_status_dicts]
+        vagrant, stderr_stream, stdout_stream = get_vagrant_obj(ex_vagrantfile)
+        try:
+            return [get_node(globalStatus)
+                    for globalStatus in vagrant.global_status()]
+        finally:
+            vagrant.err_cm.close()
+            vagrant.out_cm.close()
 
     def list_sizes(self, location=None, ex_vagrantfile=None):
         """
@@ -599,7 +644,7 @@ class Vagrantfiles(object):
         :keyword err_cm: a no-argument function that returns a ContextManager, like
           out_cm, for handling the stderr of the vagrant subprocess.  Defaults
           to none_cm.
-        :type err_cm: ``str``
+        :type err_cm: ``() -> ContextManager -> File``
         """
         vagrant_dir = self._get_vagrantfile_dir(vagrantfile or getcwd())
         self[vagrant_dir] = Vagrant(root=vagrant_dir, quiet_stdout=quiet_stdout,

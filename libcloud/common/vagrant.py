@@ -30,18 +30,49 @@ import re
 import subprocess
 import sys
 import logging
+from io import IOBase
+from pprint import PrettyPrinter
+from select import select
+from threading import Thread
+from time import sleep
 
-# local
-try:
-    from cStringIO import StringIO
-except ImportError:
+from libcloud.utils.py3 import ensure_string, PY3
+
+if PY3:
     from IO import StringIO
+else:
+    try:
+        from cStringIO import StringIO
+    except ImportError:
+        from StringIO import StringIO
 
+#########################
+# Basic utility functions
+
+# Is there not a global libcloud logger?!
+logging.basicConfig(format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s', level='INFO')
+''' # If you want to log to `stdout` rather than `stderr`
+handler = logging.root.handlers.pop()
+assert logging.root.handlers == [], "root logging handlers aren't empty"
+handler.stream.close()
+handler.stream = sys.stderr
+logging.root.addHandler(handler)
 '''
 
-'''
-# python package version
-log = logging.getLogger(__name__)
+
+def obj_to_d(obj):
+    return obj if type(obj) is dict else dict((k, getattr(obj, k))
+                                              for k in dir(obj) if not k.startswith('_'))
+
+
+pp = PrettyPrinter(indent=4).pprint
+
+# This env var seems to be used by other parts of apache-libcloud
+if 'LIBCLOUD_DEBUG' in os.environ:
+    assert os.path.isfile(os.environ['LIBCLOUD_DEBUG'])
+    fh = logging.FileHandler(os.environ['LIBCLOUD_DEBUG'])
+    map(fh.setLevel, logging._levelNames)
+    logging.root.addHandler(fh)
 
 ###########################################
 # Determine Where The Vagrant Executable Is
@@ -159,13 +190,13 @@ def get_vagrant_executable():
 
 
 if get_vagrant_executable() is None:
-    log.warn(VAGRANT_NOT_FOUND_WARNING)
+    logging.root.warn(VAGRANT_NOT_FOUND_WARNING)
 
 # Classes for listings of Statuses, Boxes, and Plugins
 Status = collections.namedtuple('Status', ['name', 'state', 'provider'])
 Box = collections.namedtuple('Box', ['name', 'provider', 'version'])
 Plugin = collections.namedtuple('Plugin', ['name', 'version', 'system'])
-GlobalStatus = collections.namedtuple('GlobalStatus', ['directory', 'id', 'name', 'provider', 'state'])
+GlobalStatus = collections.namedtuple('GlobalStatus', ['id', 'name', 'provider', 'state', 'directory'])
 
 
 #########################################################################
@@ -224,6 +255,67 @@ def make_file_cm(filename, mode='a'):
 
     return cm
 
+
+####################################################
+# Logging classes - TODO: move to a libcloud common?
+
+class StreamLogger(IOBase, logging.Handler):
+    _run = None
+
+    def __init__(self, logger_obj, level):
+        super(StreamLogger, self).__init__()
+        self.logger_obj = logger_obj
+        self.level = level
+        self.pipe = os.pipe()
+        self.thread = Thread(target=self._flusher)
+        self.thread.start()
+
+    def __call__(self):
+        return self
+
+    def _flusher(self):
+        self._run = True
+        buf = b''
+        while self._run:
+            for fh in select([self.pipe[0]], [], [], 1)[0]:
+                buf += os.read(fh, 1024)
+                while b'\n' in buf:
+                    data, buf = buf.split(b'\n', 1)
+                    self.write(data.decode())
+        self._run = None
+
+    def write(self, data):
+        return self.logger_obj.log(self.level, data)
+
+    emit = write
+
+    def fileno(self):
+        return self.pipe[1]
+
+    def close(self):
+        if self._run:
+            self._run = False
+            while self._run is not None:
+                sleep(1)
+            for pipe in self.pipe:
+                os.close(pipe)
+            self.thread.join(1)
+
+
+class LevelRangeFilter(logging.Filter):
+    def __init__(self, min_level, max_level, name=''):
+        super(LevelRangeFilter, self).__init__(name)
+        self._min_level = min_level
+        self._max_level = max_level
+
+    def filter(self, record):
+        return super(LevelRangeFilter, self).filter(record) and (
+            self._min_level is None or self._min_level <= record.levelno) and (
+                   self._max_level is None or record.levelno < self._max_level)
+
+
+#########################
+# Proper exported classes
 
 class Vagrant(object):
     """
@@ -1220,9 +1312,10 @@ class Vagrant(object):
             lambda headers: tuple(
                 itertools.imap(lambda a: GlobalStatus(*a), itertools.izip_longest(
                     *[(itertools.ifilter(lambda r: r is not None and not r.endswith('\\n"vagrant destroy 1a2b3c4d'),
-                                         itertools.imap(get_last_col, io)))] * len(headers)))))(
-            tuple(itertools.ifilter(None, itertools.imap(get_last_col, itertools.takewhile(lambda c: c[-5] != '-', io)))
-                  )))(lambda row: (lambda r: r if r else None)(row[row.rfind(',') + 1:-2].rstrip()))
+                                         itertools.imap(get_last_col, io)))] * len(headers))))
+        )(tuple(
+            itertools.ifilter(None, itertools.imap(get_last_col, itertools.takewhile(lambda c: c[-5] != '-', io))))))(
+            lambda row: (lambda r: r if r else None)(row[row.rfind(',') + 1:-2].rstrip()))
 
     def _make_vagrant_command(self, args):
         """
@@ -1254,9 +1347,10 @@ class Vagrant(object):
         """
         # Make subprocess command
         command = self._make_vagrant_command(args)
-        with self.out_cm() as out_fh, self.err_cm() as err_fh:
-            subprocess.check_call(command, cwd=self.root, stdout=out_fh,
-                                  stderr=err_fh, env=self.env)
+        with self.out_cm() as out_fh:
+            with self.err_cm() as err_fh:
+                subprocess.check_call(command, cwd=self.root, stdout=out_fh,
+                                      stderr=err_fh, env=self.env)
 
     def _run_vagrant_command(self, args):
         """
@@ -1274,7 +1368,7 @@ class Vagrant(object):
         # Make subprocess command
         command = self._make_vagrant_command(args)
         with self.err_cm() as err_fh:
-            return compat.decode(subprocess.check_output(command, cwd=self.root,
+            return ensure_string(subprocess.check_output(command, cwd=self.root,
                                                          env=self.env, stderr=err_fh))
 
 
