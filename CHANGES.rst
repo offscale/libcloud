@@ -1,9 +1,50 @@
 ﻿Changelog
 =========
 
+Changes Apache Libcloud 2.0.0rc1
+--------------------------------
 
-Changes in current version of Apache Libcloud
----------------------------------------------
+Common
+~~~~~~
+
+- Fix DEBUG mode, also add support for using io.StringIO as the file handle when calling libcloud.enable_debug
+  [GITHUB-978, LIBCLOUD-887]
+  (Anthony Shaw)
+
+- Introduction of the requests package as the mechanism for making HTTP requests for all drivers
+  [GITHUB-928]
+  (Anthony Shaw)
+
+- Fix bug where custom port and secure flag would not get propagated to connection class
+  [GITHUB-972]
+  (Anthony Shaw)
+
+- Fix bug where custom port would not get propagated to connection
+  [GITHUB-971]
+  (Anthony Shaw)
+
+- Fix bug where instantiating a connection from URL and then requesting an action with a leading / would lead to
+  a malformed URL
+  [GITHUB-976]
+  (Anthony Shaw)
+
+Compute
+~~~~~~~
+
+- Fix a bug in profitbricks driver where listing snapshots would request a malformed URL
+  [GITHUB-976]
+  (Anthony Shaw)
+
+- Fix LIBCLOUD-806 bug where vsphere driver cannot be instantiated
+  [GITHUB-967]
+  (Anthony Shaw)
+  
+- [google compute] Improve performance of list nodes by caching volume information.
+  (GITHUB-813, LIBCLOUD-826)
+  [Tom Melendez]
+
+Changes in Apache Libcloud 1.5.0
+--------------------------------
 
 Common
 ~~~~~~
@@ -14,10 +55,6 @@ Common
 
 Compute
 ~~~~~~~
-
-- [google compute] Improve performance of list nodes by caching volume information.
-  (GITHUB-813, LIBCLOUD-826)
-  [Tom Melendez]
 
 - [azure] New method for accessing rate cards.
   [GITHUB-957]
