@@ -16,13 +16,18 @@
 """
 Node driver for Vagrant.
 """
+from __future__ import print_function
 import subprocess
+from functools import partial
 from itertools import imap
-from os import path, getcwd
+from os import path, getcwd, mkdir, remove, rename
 import logging
+from sys import stdout, stderr
 
 from libcloud.common.types import LibcloudError
-from libcloud.common.vagrant import Vagrant, get_vagrant_executable, StreamLogger, LevelRangeFilter, pp, isIpPrivate
+from libcloud.common.vagrant import (Vagrant, get_vagrant_executable, StreamLogger,
+                                     LevelRangeFilter, pp, isIpPrivate, VagrantParser, Vagrantfile, VagrantfileEditor,
+                                     Virtualbox, add_to)
 
 try:
     from cStringIO import StringIO
@@ -83,14 +88,17 @@ class VagrantNodeDriver(NodeDriver):
                                  default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
         :type ex_vagrantfile: ``list`` of ``str`` or ``str``
         """
-        super(VagrantNodeDriver, self).__init__(ex_vagrantfile=ex_vagrantfile, *args, **kwargs)
+        if 'key' not in kwargs:
+            raise TypeError('base class requires `key` be defined')
+        super(self.__class__, self).__init__(ex_vagrantfile=ex_vagrantfile, *args, **kwargs)
         self.vagrants = Vagrantfiles([ex_vagrantfile] if isinstance(ex_vagrantfile, basestring) else ex_vagrantfile)
+        self.last_node_name = None
 
     def list_nodes(self, ex_vagrantfile=None, ex_vm_name=None, ex_provider=None):
         """
         List all nodes.
 
-        @inherits: :class:`NodeDriver.create_node`
+        @inherits: :class:`NodeDriver.list_nodes`
 
         :keyword ex_provider: a list of providers to filter the images returned. Defaults to all.
         :type ex_provider: ``list`` of ``str``
@@ -140,20 +148,11 @@ class VagrantNodeDriver(NodeDriver):
             """
             _vagrant, _stderr_stream, _stdout_stream = get_vagrant_obj(None, globalStatus)
 
-            private_ips = []
-            public_ips = []
-            extra = {}
             try:
-                ssh_config = _vagrant.conf(vm_name=globalStatus.id)
-                hostname = vagrant.hostname(vm_name=globalStatus.id)
-                if isIpPrivate(hostname):
-                    private_ips = [hostname]
-                    public_ips = [hostname]  # Hmm, I think for Vagrant we should set this?
-                else:
-                    public_ips = [hostname]
-                extra = {'user': _vagrant.user(vm_name=globalStatus.id) if ssh_config is not None else ssh_config,
-                         'ssh_config': ssh_config,
-                         'user_hostname_port': vagrant.user_hostname_port(vm_name=globalStatus.id)}
+                return self.ex_parse_node(_vagrant, globalStatus, vm_name=globalStatus.id,
+                                          node_name=(globalStatus.name
+                                                     if globalStatus.name != 'default' or not self.last_node_name
+                                                     else self.last_node_name))
             except subprocess.CalledProcessError as e:
                 log.exception(LibcloudError(value='CalledProcessError(cmd={e.cmd}, args={e.args},'
                                                   ' returncode={e.returncode}, stdout={stdout!r},'
@@ -161,15 +160,17 @@ class VagrantNodeDriver(NodeDriver):
                                                                                stderr=_stderr_stream.stream.getvalue(),
                                                                                stdout=_stdout_stream.stream.getvalue()),
                                             driver=VagrantNodeDriver))
+                '''if ex_vagrantfile:
+                    extra = dict(ex_vagrantfile=ex_vagrantfile)
+                else:
+                    extra = Vagrant().status(vm_name=globalStatus.id)'''
+
+                return Node(id=globalStatus.id, name=ex_vagrantfile, state='poweroff',
+                            extra=dict(ex_vagrantfile=ex_vagrantfile),
+                            driver=VagrantNodeDriver, private_ips=[], public_ips=[])
             finally:
                 _vagrant.err_cm.close()
                 _vagrant.out_cm.close()
-
-                return Node(id=globalStatus.id, name=globalStatus.name,
-                            state=globalStatus.state, driver=VagrantNodeDriver,
-                            public_ips=public_ips, private_ips=private_ips,
-                            extra=dict(provider=globalStatus.provider,
-                                       directory=globalStatus.directory, **extra))
 
         vagrant, stderr_stream, stdout_stream = get_vagrant_obj(ex_vagrantfile)
         try:
@@ -205,8 +206,8 @@ class VagrantNodeDriver(NodeDriver):
         raise NotImplementedError('N/A for Vagrant')
 
     def create_node(self, name, size, image=None, auth=None, ex_vagrantfile=None, ex_box_url=None,
-                    ex_no_provision=False, ex_provider=None, ex_vm_name=None,
-                    ex_provision=None, ex_provision_with=None,
+                    ex_no_provision=False, ex_provider='virtualbox', ex_vm_name=None,
+                    ex_provision=None, ex_provision_with=None, ex_no_up=False,
                     **kwargs):
         """
         @inherits: :class:`NodeDriver.create_node`
@@ -242,23 +243,151 @@ class VagrantNodeDriver(NodeDriver):
         :keyword ex_provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type ex_provision: ``bool``
 
-        :return: starting operation result.
-        :rtype: ``bool``
+        :keyword ex_no_up: Don't run `vagrant up`
+        :type ex_no_up: ``bool``
+
+        :return: Node that was created
+        :rtype: ``Node`` or ``None``
         """
 
-        if size is not None:
-            raise NotImplementedError('size for create_node')
-        vagrantfile_loc = Vagrantfiles._get_vagrantfile_dir(ex_vagrantfile or getcwd())
+        ex_vagrantfile = ex_vagrantfile or path.join(getcwd(), 'Vagrantfile')
+        vagrantfile_loc = Vagrantfiles._get_vagrantfile_dir(ex_vagrantfile)
+        if not path.exists(vagrantfile_loc):
+            mkdir(vagrantfile_loc)
+        elif path.exists(ex_vagrantfile):
+            raise OSError('`Vagrantfile` already exists at {!r}. '
+                          'Remove it before running `vagrant init`/create_node.'.format(ex_vagrantfile))
+
+        self.last_node_name = name
+
+        self.vagrants.push(ex_vagrantfile)
+        vagrant_obj = self.vagrants[ex_vagrantfile]
+
         subprocess.call([
-            get_vagrant_executable(), 'init', '{name} {box_url}'.format(
-                box_url=ex_box_url if ex_box_url is not None else image.id if image is not None and image.id else '',
-                name=path.basename(ex_vagrantfile)),
-            '--output "{vagrantfile_loc}"'.format(vagrantfile_loc=vagrantfile_loc)
+            get_vagrant_executable(), 'init',
+            ex_box_url if ex_box_url is not None else image.id if image is not None and image.id else '',
+            '--output', ex_vagrantfile
         ])
-        return self.ex_start_node(vagrantfile=vagrantfile_loc,
-                                  no_provision=ex_no_provision, provider=ex_provider,
-                                  vm_name=ex_vm_name, provision=ex_provision, provision_with=ex_provision_with
-                                  )
+
+        new_vagrantfile_kwargs = self.prepare_vagrantfile(name, size, ex_provider, kwargs)
+
+        with open(ex_vagrantfile, 'r+') as f:
+            new_vagrantfile = ''.join(
+                VagrantfileEditor.parse_emit(blocks=new_vagrantfile_kwargs['blocks'],
+                                             first_lines=new_vagrantfile_kwargs['first_lines'])(f))
+            f.seek(0)
+            f.write(new_vagrantfile)
+
+        if size and size.disk is not None:
+            log.warn('Not resizing disk, still implementation details TODO')  # TODO
+            # self.resize_disk(ex_vm_name, name, new_vagrantfile_kwargs, size, vagrant_obj, first_run=True)
+
+        if ex_no_up:
+            try:
+                status = vagrant_obj.status(vm_name=vagrant_obj.root)
+            except subprocess.CalledProcessError as e:
+                log.exception(e)
+                status = None
+                return Node(id=name, name=name,
+                            state='poweroff? status check failed', driver=VagrantNodeDriver,
+                            public_ips=[], private_ips=[],
+                            extra=dict(ex_vagrantfile=path.join(vagrant_obj.root, 'Vagrantfile'),
+                                       directory=vagrant_obj.root))
+            return self.ex_parse_node(vagrantfile_obj=vagrant_obj,
+                                      globalStatus=status,
+                                      vm_name=ex_vm_name, node_name=name)
+        else:
+            return self.ex_start_node(vagrantfile=ex_vagrantfile,
+                                      no_provision=ex_no_provision, provider=ex_provider,
+                                      vm_name=ex_vm_name,
+                                      node_name=name,
+                                      provision=ex_provision, provision_with=ex_provision_with
+                                      )
+
+    @staticmethod
+    def prepare_vagrantfile(name, size, ex_provider, kwargs):
+        new_vagrantfile_kwargs = {}
+        if size is not None:
+            if size.ram:
+                if size.extra is None:
+                    size.extra = {'memory': size.ram}
+                else:
+                    size.extra['memory'] = size.ram
+            if size.extra:
+                new_vagrantfile_kwargs.update(**size.extra)
+                new_vagrantfile_kwargs['provider'] = size.extra['provider']
+        new_vagrantfile_kwargs['name'] = '"{}"'.format(name)
+
+        first_lines = (
+            'config.vm.hostname = "{}"'.format(name),
+        )
+        first_block = (
+            {'name': 'config.vm.define "{name}"'.format(name=name), 'args': 'foo'},
+            {'name': 'config.vm.provider', 'func_args': '"{}"'.format(ex_provider), 'args': 'v',
+             'body_lines': ('v.name = "{}"'.format(name),)}
+        )
+        new_vagrantfile_kwargs['blocks'] = add_to(new_vagrantfile_kwargs['blocks'],
+                                                  first_block,
+                                                  new_vagrantfile_kwargs['blocks']
+                                                  ) if 'blocks' in new_vagrantfile_kwargs else first_block
+        # 'config.vm.provision "{name}", {d}'.format(name=name, d='{type: "shell", inline: "echo foo"}')
+        new_vagrantfile_kwargs['first_lines'] = add_to(new_vagrantfile_kwargs['first_lines'], first_lines,
+                                                       "new_vagrantfile_kwargs['first_lines']") \
+            if 'first_lines' in new_vagrantfile_kwargs else first_lines
+        if 'extras' in kwargs and kwargs['extras']:
+            if 'first_lines' in kwargs['extras']:
+                new_vagrantfile_kwargs['first_lines'] = add_to(new_vagrantfile_kwargs['first_lines'], '')  # \n
+                new_vagrantfile_kwargs['first_lines'] = add_to(new_vagrantfile_kwargs['first_lines'],
+                                                               kwargs['extras']['first_lines'],
+                                                               "new_vagrantfile_kwargs['first_lines']")
+            if 'blocks' in kwargs['extras']:
+                new_vagrantfile_kwargs['blocks'] = add_to(kwargs['extras']['blocks'], new_vagrantfile_kwargs['blocks'],
+                                                          "kwargs['extras']['blocks']")
+        return new_vagrantfile_kwargs
+
+    def resize_disk(self, ex_vm_name, name, new_vagrantfile_kwargs, size, vagrant_obj, first_run):
+        if new_vagrantfile_kwargs['provider'] != '"virtualbox"':
+            raise NotImplementedError('Disk manipulation only implemented for VirtualBox')
+
+        if first_run:
+            vagrant_obj.up(no_provision=True)
+            vagrant_obj.halt(vm_name=ex_vm_name)
+
+        vm_info = Virtualbox.get_dict(subprocess.check_output(['VBoxManage', 'showvminfo', name]))
+        if not vm_info['State'].startswith('powered off'):
+            raise OSError('Unable to manipulate HD with VM on. VM is {}'.format(vm_info['State']))
+
+        hdd = next(hd for hd in imap(lambda hdd: Virtualbox.get_dict(
+            subprocess.check_output(['VBoxManage', 'showhdinfo', hdd])),
+                                     (v[:v.rfind('(') - 1] for v in vm_info.itervalues() if 'vmdk' in v or 'vdi' in v))
+                   if hd['Size on disk'] != '0 MBytes')
+
+        new_size = '{:d}'.format(size.disk * 1024)
+        if hdd['Capacity'] == '{} MBytes'.format(new_size):
+            return
+
+        base = path.dirname(hdd['Location'])
+        assert path.isdir(base)
+        tmp_disk = 'tmp-disk.vdi'  # path.join(base,)
+        rpl_disk = 'resized-disk.vmdk'  # path.join(base, )
+        print('base =', base)
+        print('tmp_disk =', tmp_disk)
+        print('rpl_disk =', rpl_disk)
+        call = partial(subprocess.call, stdout=stdout, stderr=stderr, cwd=base)
+        call(['VBoxManage', 'clonehd', path.basename(hdd['Location']), tmp_disk, '--format', 'vdi'])
+        call(['VBoxManage', 'internalcommands', 'sethduuid', tmp_disk])
+        call(['VBoxManage', 'modifyhd', tmp_disk, '--resize', new_size])
+        call(['VBoxManage', 'clonehd', tmp_disk, rpl_disk, '--format', 'vmdk'])
+        call(['VBoxManage', 'internalcommands', 'sethduuid', rpl_disk])
+        if path.isfile(path.join(base, tmp_disk)):
+            remove(path.join(base, tmp_disk))
+        else:
+            print('Weird, not file:', path.join(base, tmp_disk))
+        if path.isfile(hdd['Location']):
+            remove(hdd['Location'])
+        else:
+            print('Weird, not file:', hdd['Location'])
+        rename(path.join(base, rpl_disk), hdd['Location'])
 
     def reboot_node(self, ex_vagrantfile=None, ex_vm_name=None, ex_provision=None, ex_provision_with=None):
         """
@@ -494,8 +623,54 @@ class VagrantNodeDriver(NodeDriver):
         """
         raise NotImplementedError()
 
+    @staticmethod
+    def ex_parse_node(vagrantfile_obj, globalStatus, vm_name, node_name):
+        """
+        :keyword vagrantfile_obj: Vagrantfile obj
+        :type vagrantfile_obj: ``Vagrant``
+
+        :keyword globalStatus: globalStatus or Status obj
+        :type globalStatus: ``GlobalStatus`` or ``Status``
+
+        :keyword vm_name: vm_name
+        :type vm_name: ``str``
+
+        :keyword node_name: name of node (as wanted for etcd, hostname &etc).
+        :type node_name: ``str``
+
+        :return Node that was parsed out
+        :rtype ``Node``
+        """
+        if globalStatus.state.startswith('poweroff') or globalStatus.state == 'not_created':
+            return Node(id=globalStatus.id, name=node_name,
+                        state=globalStatus.state, driver=VagrantNodeDriver,
+                        public_ips=[], private_ips=[],
+                        extra=dict(provider=globalStatus.provider,
+                                   ex_vagrantfile=path.join(vagrantfile_obj.root, 'Vagrantfile'),
+                                   directory=vagrantfile_obj.root))
+
+        ssh_config = vagrantfile_obj.conf(vm_name=vm_name)
+        hostname = vagrantfile_obj.hostname(vm_name=vm_name)
+
+        if isIpPrivate(hostname):
+            private_ips = [hostname]
+            public_ips = [hostname]  # Hmm, I think for Vagrant we should set this?
+        else:
+            private_ips = []
+            public_ips = [hostname]
+        extra = {'user': vagrantfile_obj.user(vm_name=globalStatus.id) if ssh_config is not None else ssh_config,
+                 'ssh_config': ssh_config,
+                 'user_hostname_port': vagrantfile_obj.user_hostname_port(vm_name=globalStatus.id)}
+
+        return Node(id=globalStatus.id, name=node_name,
+                    state=globalStatus.state, driver=VagrantNodeDriver,
+                    public_ips=public_ips, private_ips=private_ips,
+                    extra=dict(provider=globalStatus.provider,
+                               ex_vagrantfile=path.join(globalStatus.directory, 'Vagrantfile'),
+                               directory=globalStatus.directory, **extra))
+
     def ex_start_node(self, vagrantfile, no_provision=False, provider=None, vm_name=None,
-                      provision=None, provision_with=None):
+                      node_name=None, provision=None, provision_with=None):
         """
         Start node to running state.
 
@@ -518,11 +693,27 @@ class VagrantNodeDriver(NodeDriver):
         :keyword provision_with: optional list of provisioners to enable.
         :type provision_with: ``list`` of ``str``
 
+        :keyword node_name: name of node (as wanted for etcd, hostname &etc).
+        :type node_name: ``str``
+
         :keyword provision: Enable or disable provisioning. Default behavior is to use the underlying vagrant default.
         :type provision: ``bool``
+
+        :return: Node that was created
+        :rtype: ``Node``
         """
         self.vagrants.push(vagrantfile)
-        self.vagrants[vagrantfile].up(no_provision, provider, vm_name, provision, provision_with)
+        status = self.vagrants[vagrantfile].up(no_provision=no_provision, provider=provider, vm_name=vm_name,
+                                               provision=provision, provision_with=provision_with)
+        vm_name = vm_name or status.vm_name
+        if vm_name is None or vm_name.isdigit():
+            # Status gets some weird other ID `machine.name[:max_name_length]`
+            return next(node for node in self.list_nodes()
+                        if node.extra['ex_vagrantfile'] == vagrantfile)
+
+        return self.ex_parse_node(vagrantfile_obj=self.vagrants[vagrantfile],
+                                  globalStatus=status,
+                                  vm_name=vm_name, node_name=node_name)
 
     def ex_stop_node(self, vagrantfile, vm_name=None, ex_force_stop=False):
         """
@@ -560,6 +751,26 @@ class VagrantNodeDriver(NodeDriver):
         vagrant = self.vagrants[vagrantfile]
         return {'user': vagrant.user(), 'ssh_config': vagrant.conf()}
 
+    def ex_parse_vagrantfile(self, ex_vagrantfile, method=None):
+        """
+        :keyword ex_vagrantfile: Vagrantfile location
+                                 default to ``None`` [this dir]. If a filepath is given, its dir is resolved.
+        :type ex_vagrantfile: ``str``
+
+        :keyword method: Method to call on the parsed otuput;
+                 e.g.: 'configure_version', 'serializable', 'to_dict', 'to_dict_iter', 'to_dict_obj', 'vm'
+        :type ex_vagrantfile: ``str``
+
+        :return: parsed Vagrantfile object
+        :rtype: ``Vagrantfile``
+        """
+        ex_vagrantfile = ex_vagrantfile or path.join(getcwd(), 'Vagrantfile')
+        vagrantfile_loc = Vagrantfiles._get_vagrantfile_dir(ex_vagrantfile)
+
+        with open(ex_vagrantfile) as f:
+            parsed = VagrantParser.parses(content=f.read())
+        return parsed if method is None else getattr(parsed, method)()
+
 
 class Vagrantfiles(object):
     vagrantfiles = {}
@@ -583,7 +794,7 @@ class Vagrantfiles(object):
         :type vagrantfile: ``str``
 
         :return: Vagrant object
-        :rtype: ``vagrant.Vagrant``
+        :rtype: ``Vagrant``
         """
         return self.vagrantfiles[self._get_vagrantfile_dir(vagrantfile or getcwd())]
 
@@ -669,4 +880,5 @@ class Vagrantfiles(object):
         """
         if vagrantfile is None:
             return
-        return path.dirname(vagrantfile) if path.isfile(vagrantfile) else vagrantfile
+        return path.dirname(vagrantfile) if path.isfile(vagrantfile) or vagrantfile.endswith(
+            '{}Vagrantfile'.format(path.sep)) else vagrantfile

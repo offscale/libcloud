@@ -284,7 +284,7 @@ class CloudSigma_1_0_NodeDriver(CloudSigmaNodeDriver):
         :keyword    vnc_password: If not set, VNC access is disabled.
         :type       vnc_password: ``bool``
 
-        :keyword    drive_type: Drive type (ssd|hdd). Defaults to hdd.
+        :keyword    drive_type: Drive type (ssd|v). Defaults to v.
         :type       drive_type: ``str``
         """
         size = kwargs['size']
@@ -292,14 +292,14 @@ class CloudSigma_1_0_NodeDriver(CloudSigmaNodeDriver):
         smp = kwargs.get('smp', 'auto')
         nic_model = kwargs.get('nic_model', 'e1000')
         vnc_password = kwargs.get('vnc_password', None)
-        drive_type = kwargs.get('drive_type', 'hdd')
+        drive_type = kwargs.get('drive_type', 'v')
 
         if nic_model not in ['e1000', 'rtl8139', 'virtio']:
             raise CloudSigmaException('Invalid NIC model specified')
 
-        if drive_type not in ['hdd', 'ssd']:
+        if drive_type not in ['v', 'ssd']:
             raise CloudSigmaException('Invalid drive type "%s". Valid types'
-                                      ' are: hdd, ssd' % (drive_type))
+                                      ' are: v, ssd' % (drive_type))
 
         drive_data = {}
         drive_data.update({'name': kwargs['name'],
