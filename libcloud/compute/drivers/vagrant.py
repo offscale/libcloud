@@ -51,7 +51,7 @@ class VagrantNodeDriver(NodeDriver):
     @inherits :class:`NodeDriver`
     """
 
-    name = 'Vagrant'
+    type = name = 'Vagrant'
     website = 'https://www.vagrantup.com'
     features = {'create_node': ['ssh_key']}
 
