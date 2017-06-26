@@ -162,7 +162,7 @@ class Provider(Type):
     SKALICLOUD = 'skalicloud'
     SOFTLAYER = 'softlayer'
     TERREMARK = 'terremark'
-    VAGRANT = 'vagrant'
+    VAGRANT = VIRTUALBOX = 'vagrant'
     VCL = 'vcl'
     VCLOUD = 'vcloud'
     VOXEL = 'voxel'

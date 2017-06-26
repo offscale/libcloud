@@ -641,7 +641,7 @@ class VagrantNodeDriver(NodeDriver):
         :return Node that was parsed out
         :rtype ``Node``
         """
-        if globalStatus.state.startswith('poweroff') or globalStatus.state == 'not_created':
+        if globalStatus.state is not None and globalStatus.state.startswith('poweroff') or globalStatus.state == 'not_created':
             return Node(id=globalStatus.id, name=node_name,
                         state=globalStatus.state, driver=VagrantNodeDriver,
                         public_ips=[], private_ips=[],
