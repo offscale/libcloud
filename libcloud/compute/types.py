@@ -99,6 +99,7 @@ class Provider(Type):
     :cvar RIMUHOSTING: RimuHosting.com
     :cvar TERREMARK: Terremark
     :cvar VAGRANT: Vagrant driver
+    :cvar UPCLOUD: UpCloud
     :cvar VCL: VCL driver
     :cvar VCLOUD: vmware vCloud
     :cvar VPSNET: VPS.net
@@ -162,6 +163,7 @@ class Provider(Type):
     SKALICLOUD = 'skalicloud'
     SOFTLAYER = 'softlayer'
     TERREMARK = 'terremark'
+    UPCLOUD = 'upcloud'
     VAGRANT = VIRTUALBOX = 'vagrant'
     VCL = 'vcl'
     VCLOUD = 'vcloud'
@@ -288,6 +290,7 @@ class NodeState(Type):
     RECONFIGURING = 'reconfiguring'
     MIGRATING = 'migrating'
     NORMAL = 'normal'
+    UPDATING = 'updating'
 
 
 class StorageVolumeState(Type):
@@ -304,6 +307,7 @@ class StorageVolumeState(Type):
     ATTACHING = 'attaching'
     UNKNOWN = 'unknown'
     MIGRATING = 'migrating'
+    UPDATING = 'updating'
 
 
 class VolumeSnapshotState(Type):
@@ -316,6 +320,7 @@ class VolumeSnapshotState(Type):
     DELETING = 'deleting'
     RESTORING = 'restoring'
     UNKNOWN = 'unknown'
+    UPDATING = 'updating'
 
 
 class Architecture(object):
