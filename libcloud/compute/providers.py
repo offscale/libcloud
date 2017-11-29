@@ -148,7 +148,7 @@ DRIVERS = {
     Provider.VAGRANT:
         ('libcloud.compute.drivers.vagrant', 'VagrantNodeDriver'),
     Provider.VIRTUALBOX:
-        ('libcloud.compute.drivers.vagrant', 'VagrantNodeDriver')
+        ('libcloud.compute.drivers.vagrant', 'VagrantNodeDriver'),
     Provider.UPCLOUD:
     ('libcloud.compute.drivers.upcloud', 'UpcloudDriver'),
 }
