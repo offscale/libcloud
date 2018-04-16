@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import unittest
 import random
 from unittest.util import safe_repr
 import requests
@@ -32,12 +33,6 @@ from libcloud.utils.py3 import urlparse
 from libcloud.utils.py3 import parse_qs
 from libcloud.utils.py3 import parse_qsl
 from libcloud.utils.py3 import urlquote
-from libcloud.utils.py3 import unittest2_required
-
-if unittest2_required:
-    import unittest2 as unittest
-else:
-    import unittest
 
 
 XML_HEADERS = {'content-type': 'application/xml'}
