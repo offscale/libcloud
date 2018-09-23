@@ -151,6 +151,8 @@ DRIVERS = {
         ('libcloud.compute.drivers.vagrant', 'VagrantNodeDriver'),
     Provider.UPCLOUD:
     ('libcloud.compute.drivers.upcloud', 'UpcloudDriver'),
+    Provider.SCALEWAY:
+    ('libcloud.compute.drivers.scaleway', 'ScalewayNodeDriver'),
 }
 
 
