@@ -25,6 +25,7 @@ Provider                              list nodes create node reboot node destroy
 `Gandi`_                              yes        yes         yes         yes          yes         yes        no         
 `Google Compute Engine`_              yes        yes         yes         yes          yes         yes        no         
 `GoGrid`_                             yes        yes         yes         yes          yes         yes        yes        
+`Gridscale`_                          yes        yes         yes         yes          yes         no         yes        
 `HostVirtual`_                        yes        yes         yes         yes          yes         yes        yes        
 `Ikoula`_                             yes        yes         yes         yes          yes         yes        yes        
 `Indosat`_                            yes        yes         yes         yes          yes         yes        yes        
@@ -34,10 +35,12 @@ Provider                              list nodes create node reboot node destroy
 `KTUCloud`_                           yes        yes         yes         yes          yes         yes        yes        
 `Libvirt`_                            yes        no          yes         yes          no          no         no         
 `Linode`_                             yes        yes         yes         yes          yes         yes        yes        
+`Maxihost`_                           yes        yes         yes         yes          yes         yes        no         
 `MedOne`_                             yes        yes         yes         yes          yes         yes        yes        
 `NephoScale`_                         yes        yes         yes         yes          yes         yes        yes        
 `Nimbus`_                             yes        yes         yes         yes          yes         yes        yes        
 `NTTAmerica`_                         yes        yes         yes         yes          yes         yes        yes        
+`NTTC-CIS`_                           yes        yes         yes         yes          yes         yes        yes        
 `OnApp`_                              yes        yes         no          yes          yes         no         no         
 `1and1`_                              yes        yes         yes         yes          yes         yes        no         
 `OpenNebula (v3.8)`_                  yes        yes         yes         yes          yes         yes        no         
@@ -50,10 +53,12 @@ Provider                              list nodes create node reboot node destroy
 `Rackspace Cloud (Next Gen)`_         yes        yes         yes         yes          yes         yes        yes        
 `Rackspace Cloud (First Gen)`_        yes        yes         yes         yes          yes         yes        yes        
 `RimuHosting`_                        yes        yes         yes         yes          yes         yes        yes        
+`Scaleway`_                           yes        yes         yes         yes          yes         yes        no         
 `ServerLove`_                         yes        yes         yes         yes          yes         yes        yes        
 `skalicloud`_                         yes        yes         yes         yes          yes         yes        yes        
 `SoftLayer`_                          yes        yes         yes         yes          yes         yes        yes        
 `vCloud`_                             yes        yes         yes         yes          yes         yes        yes        
+`Upcloud`_                            yes        yes         yes         yes          yes         yes        yes        
 `VCL`_                                yes        yes         no          yes          yes         yes        no         
 `vCloud`_                             yes        yes         yes         yes          yes         yes        yes        
 `Voxel VoxCLOUD`_                     yes        yes         yes         yes          yes         yes        no         
@@ -79,10 +84,11 @@ Provider                              list nodes create node reboot node destroy
 .. _`Enomaly Elastic Computing Platform`: http://www.enomaly.com/
 .. _`ElasticHosts`: http://www.elastichosts.com/
 .. _`Eucalyptus`: http://www.eucalyptus.com/
-.. _`Exoscale`: https://www.exoscale.ch/
+.. _`Exoscale`: https://www.exoscale.com/
 .. _`Gandi`: http://www.gandi.net/
 .. _`Google Compute Engine`: https://cloud.google.com/
 .. _`GoGrid`: http://www.gogrid.com/
+.. _`Gridscale`: https://gridscale.io
 .. _`HostVirtual`: http://www.hostvirtual.com
 .. _`Ikoula`: http://express.ikoula.co.uk/cloudstack
 .. _`Indosat`: http://www.indosat.com/
@@ -92,10 +98,12 @@ Provider                              list nodes create node reboot node destroy
 .. _`KTUCloud`: https://ucloudbiz.olleh.com/
 .. _`Libvirt`: http://libvirt.org/
 .. _`Linode`: http://www.linode.com/
+.. _`Maxihost`: https://www.maxihost.com/
 .. _`MedOne`: http://www.med-1.com/
 .. _`NephoScale`: http://www.nephoscale.com
 .. _`Nimbus`: http://www.nimbusproject.org/
 .. _`NTTAmerica`: http://www.nttamerica.com/
+.. _`NTTC-CIS`: https://www.us.ntt.com/en/services/cloud/enterprise-cloud.html
 .. _`OnApp`: http://onapp.com/
 .. _`1and1`: http://www.1and1.com
 .. _`OpenNebula (v3.8)`: http://opennebula.org/
@@ -103,15 +111,17 @@ Provider                              list nodes create node reboot node destroy
 .. _`Outscale INC`: http://www.outscale.com
 .. _`Outscale SAS`: http://www.outscale.com
 .. _`Ovh`: https://www.ovh.com/
-.. _`Packet`: http://www.packet.net/
+.. _`Packet`: http://www.packet.com/
 .. _`ProfitBricks`: http://www.profitbricks.com
 .. _`Rackspace Cloud (Next Gen)`: http://www.rackspace.com
 .. _`Rackspace Cloud (First Gen)`: http://www.rackspace.com
 .. _`RimuHosting`: http://rimuhosting.com/
+.. _`Scaleway`: https://www.scaleway.com/
 .. _`ServerLove`: http://www.serverlove.com/
 .. _`skalicloud`: http://www.skalicloud.com/
 .. _`SoftLayer`: http://www.softlayer.com/
 .. _`vCloud`: http://www.vmware.com/products/vcloud/
+.. _`Upcloud`: https://www.upcloud.com
 .. _`VCL`: http://incubator.apache.org/vcl/
 .. _`vCloud`: http://www.vmware.com/products/vcloud/
 .. _`Voxel VoxCLOUD`: http://www.voxel.net/

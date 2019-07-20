@@ -25,6 +25,7 @@ Provider                              list images get image create image delete 
 `Gandi`_                              yes         no        no           no           no        
 `Google Compute Engine`_              yes         no        no           no           no        
 `GoGrid`_                             yes         no        no           no           no        
+`Gridscale`_                          yes         yes       yes          yes          no        
 `HostVirtual`_                        yes         no        no           no           no        
 `Ikoula`_                             yes         no        no           no           no        
 `Indosat`_                            yes         no        no           no           no        
@@ -34,10 +35,12 @@ Provider                              list images get image create image delete 
 `KTUCloud`_                           yes         no        no           no           no        
 `Libvirt`_                            no          no        no           no           no        
 `Linode`_                             yes         no        no           no           no        
+`Maxihost`_                           yes         no        no           no           no        
 `MedOne`_                             yes         no        no           no           no        
 `NephoScale`_                         yes         no        no           no           no        
 `Nimbus`_                             yes         yes       yes          yes          yes       
 `NTTAmerica`_                         yes         no        no           no           no        
+`NTTC-CIS`_                           yes         no        no           no           no        
 `OnApp`_                              yes         no        no           no           no        
 `1and1`_                              yes         yes       no           no           no        
 `OpenNebula (v3.8)`_                  yes         no        no           no           no        
@@ -50,10 +53,12 @@ Provider                              list images get image create image delete 
 `Rackspace Cloud (Next Gen)`_         yes         yes       yes          yes          no        
 `Rackspace Cloud (First Gen)`_        yes         yes       yes          yes          no        
 `RimuHosting`_                        yes         no        no           no           no        
+`Scaleway`_                           yes         yes       yes          yes          no        
 `ServerLove`_                         yes         no        no           no           no        
 `skalicloud`_                         yes         no        no           no           no        
 `SoftLayer`_                          yes         yes       no           no           no        
 `vCloud`_                             yes         no        no           no           no        
+`Upcloud`_                            yes         no        no           no           no        
 `VCL`_                                yes         no        no           no           no        
 `vCloud`_                             yes         no        no           no           no        
 `Voxel VoxCLOUD`_                     yes         no        no           no           no        
@@ -79,10 +84,11 @@ Provider                              list images get image create image delete 
 .. _`Enomaly Elastic Computing Platform`: http://www.enomaly.com/
 .. _`ElasticHosts`: http://www.elastichosts.com/
 .. _`Eucalyptus`: http://www.eucalyptus.com/
-.. _`Exoscale`: https://www.exoscale.ch/
+.. _`Exoscale`: https://www.exoscale.com/
 .. _`Gandi`: http://www.gandi.net/
 .. _`Google Compute Engine`: https://cloud.google.com/
 .. _`GoGrid`: http://www.gogrid.com/
+.. _`Gridscale`: https://gridscale.io
 .. _`HostVirtual`: http://www.hostvirtual.com
 .. _`Ikoula`: http://express.ikoula.co.uk/cloudstack
 .. _`Indosat`: http://www.indosat.com/
@@ -92,10 +98,12 @@ Provider                              list images get image create image delete 
 .. _`KTUCloud`: https://ucloudbiz.olleh.com/
 .. _`Libvirt`: http://libvirt.org/
 .. _`Linode`: http://www.linode.com/
+.. _`Maxihost`: https://www.maxihost.com/
 .. _`MedOne`: http://www.med-1.com/
 .. _`NephoScale`: http://www.nephoscale.com
 .. _`Nimbus`: http://www.nimbusproject.org/
 .. _`NTTAmerica`: http://www.nttamerica.com/
+.. _`NTTC-CIS`: https://www.us.ntt.com/en/services/cloud/enterprise-cloud.html
 .. _`OnApp`: http://onapp.com/
 .. _`1and1`: http://www.1and1.com
 .. _`OpenNebula (v3.8)`: http://opennebula.org/
@@ -103,15 +111,17 @@ Provider                              list images get image create image delete 
 .. _`Outscale INC`: http://www.outscale.com
 .. _`Outscale SAS`: http://www.outscale.com
 .. _`Ovh`: https://www.ovh.com/
-.. _`Packet`: http://www.packet.net/
+.. _`Packet`: http://www.packet.com/
 .. _`ProfitBricks`: http://www.profitbricks.com
 .. _`Rackspace Cloud (Next Gen)`: http://www.rackspace.com
 .. _`Rackspace Cloud (First Gen)`: http://www.rackspace.com
 .. _`RimuHosting`: http://rimuhosting.com/
+.. _`Scaleway`: https://www.scaleway.com/
 .. _`ServerLove`: http://www.serverlove.com/
 .. _`skalicloud`: http://www.skalicloud.com/
 .. _`SoftLayer`: http://www.softlayer.com/
 .. _`vCloud`: http://www.vmware.com/products/vcloud/
+.. _`Upcloud`: https://www.upcloud.com
 .. _`VCL`: http://incubator.apache.org/vcl/
 .. _`vCloud`: http://www.vmware.com/products/vcloud/
 .. _`Voxel VoxCLOUD`: http://www.voxel.net/

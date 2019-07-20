@@ -95,6 +95,7 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
     EX_CREATE_ATTRIBUTES = ['backups',
                             'ipv6',
                             'private_networking',
+                            'tags',
                             'ssh_keys']
 
     def list_images(self):
@@ -111,9 +112,22 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
         data = self._paginated_request('/v2/account/keys', 'ssh_keys')
         return list(map(self._to_key_pair, data))
 
-    def list_locations(self):
+    def list_locations(self, ex_available=True):
+        """
+        List locations
+
+        :param ex_available: Only return locations which are available.
+        :type ex_evailable: ``bool``
+        """
+        locations = []
         data = self._paginated_request('/v2/regions', 'regions')
-        return list(map(self._to_location, data))
+        for location in data:
+            if ex_available:
+                if location.get('available'):
+                    locations.append(self._to_location(location))
+            else:
+                locations.append(self._to_location(location))
+        return locations
 
     def list_nodes(self):
         data = self._paginated_request('/v2/droplets', 'droplets')
@@ -138,6 +152,7 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
         * `backups`: ``bool`` defaults to False
         * `ipv6`: ``bool`` defaults to False
         * `private_networking`: ``bool`` defaults to False
+        * `tags`: ``list`` of ``str`` tags
         * `user_data`: ``str`` for cloud-config data
         * `ssh_keys`: ``list`` of ``int`` key ids or ``str`` fingerprints
 
@@ -493,6 +508,20 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
                                       method='DELETE')
         return res.status == httplib.NO_CONTENT
 
+    def ex_get_node_details(self, node_id):
+        """
+        Lists details of the specified server.
+
+        :param       node_id: ID of the node which should be used
+        :type        node_id: ``str``
+
+        :rtype: :class:`Node`
+        """
+        data = self._paginated_request(
+            '/v2/droplets/{}'.format(node_id), 'droplet'
+        )
+        return self._to_node(data)
+
     def ex_create_floating_ip(self, location):
         """
         Create new floating IP reserved to a region.
@@ -598,7 +627,7 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
         return resp.status == httplib.CREATED
 
     def _to_node(self, data):
-        extra_keys = ['memory', 'vcpus', 'disk', 'region', 'image',
+        extra_keys = ['memory', 'vcpus', 'disk', 'image', 'size',
                       'size_slug', 'locked', 'created_at', 'networks',
                       'kernel', 'backup_ids', 'snapshot_ids', 'features',
                       'tags']
@@ -622,7 +651,7 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
         for key in extra_keys:
             if key in data:
                 extra[key] = data[key]
-
+        extra['region'] = data.get('region', {}).get('name')
         node = Node(id=data['id'], name=data['name'], state=state,
                     public_ips=public_ips, private_ips=private_ips,
                     created_at=created, driver=self, extra=extra)
@@ -649,8 +678,9 @@ class DigitalOcean_v2_NodeDriver(DigitalOcean_v2_BaseDriver,
                              extra=extra)
 
     def _to_location(self, data):
+        extra = data.get('features', [])
         return NodeLocation(id=data['slug'], name=data['name'], country=None,
-                            driver=self)
+                            extra=extra, driver=self)
 
     def _to_size(self, data):
         extra = {'vcpus': data['vcpus'],

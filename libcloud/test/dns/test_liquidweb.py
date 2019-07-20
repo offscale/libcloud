@@ -61,28 +61,27 @@ class LiquidWebTests(unittest.TestCase):
         self.assertEqual(zone.domain, 'blogtest.com')
         self.assertEqual(zone.type, 'NATIVE')
         self.assertEqual(zone.driver, self.driver)
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
         second_zone = zones[1]
         self.assertEqual(second_zone.id, '378449')
         self.assertEqual(second_zone.domain, 'oltjanotest.com')
         self.assertEqual(second_zone.type, 'NATIVE')
         self.assertEqual(second_zone.driver, self.driver)
-        self.assertEqual(second_zone.ttl, None)
+        self.assertIsNone(second_zone.ttl)
 
         third_zone = zones[2]
         self.assertEqual(third_zone.id, '378450')
         self.assertEqual(third_zone.domain, 'pythontest.com')
         self.assertEqual(third_zone.type, 'NATIVE')
         self.assertEqual(third_zone.driver, self.driver)
-        self.assertEqual(third_zone.ttl, None)
+        self.assertIsNone(third_zone.ttl)
 
     def test_get_zone_zone_does_not_exist(self):
         LiquidWebMockHttp.type = 'ZONE_DOES_NOT_EXIST'
         try:
             self.driver.get_zone(zone_id='13')
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, '13')
         else:
             self.fail('Exception was not thrown')
@@ -94,7 +93,7 @@ class LiquidWebTests(unittest.TestCase):
         self.assertEqual(zone.id, '13')
         self.assertEqual(zone.domain, 'blogtest.com')
         self.assertEqual(zone.type, 'NATIVE')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
         self.assertEqual(zone.driver, self.driver)
 
     def test_delete_zone_success(self):
@@ -109,8 +108,7 @@ class LiquidWebTests(unittest.TestCase):
         zone = self.test_zone
         try:
             self.driver.delete_zone(zone=zone)
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, '11')
         else:
             self.fail('Exception was not thrown')
@@ -122,15 +120,14 @@ class LiquidWebTests(unittest.TestCase):
         self.assertEqual(zone.id, '13')
         self.assertEqual(zone.domain, 'test.com')
         self.assertEqual(zone.type, 'NATIVE')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
         self.assertEqual(zone.driver, self.driver)
 
     def test_create_zone_zone_zone_already_exists(self):
         LiquidWebMockHttp.type = 'CREATE_ZONE_ZONE_ALREADY_EXISTS'
         try:
             self.driver.create_zone(domain='test.com')
-        except ZoneAlreadyExistsError:
-            e = sys.exc_info()[1]
+        except ZoneAlreadyExistsError as e:
             self.assertEqual(e.zone_id, 'test.com')
         else:
             self.fail('Exception was not thrown')
@@ -175,8 +172,7 @@ class LiquidWebTests(unittest.TestCase):
         LiquidWebMockHttp.type = 'GET_RECORD_RECORD_DOES_NOT_EXIST'
         try:
             self.driver.get_record(zone_id='13', record_id='13')
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, '13')
         else:
             self.fail('Exception was not thrown')
@@ -221,8 +217,7 @@ class LiquidWebTests(unittest.TestCase):
         record = self.test_record
         try:
             self.driver.delete_record(record=record)
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, '13')
         else:
             self.fail('Exception was not thrown')

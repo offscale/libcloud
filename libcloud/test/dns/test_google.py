@@ -40,7 +40,7 @@ class GoogleTests(GoogleTestCase):
         self.driver = GoogleDNSDriver(*DNS_PARAMS_GOOGLE, **kwargs)
 
     def test_default_scopes(self):
-        self.assertEqual(self.driver.scopes, None)
+        self.assertIsNone(self.driver.scopes)
 
     def test_list_zones(self):
         zones = self.driver.list_zones()
@@ -61,8 +61,7 @@ class GoogleTests(GoogleTestCase):
 
         try:
             self.driver.get_zone('example-com')
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, 'example-com')
         else:
             self.fail('Exception not thrown')
@@ -81,8 +80,7 @@ class GoogleTests(GoogleTestCase):
 
         try:
             self.driver.get_record('example-com', 'a:a')
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, 'example-com')
         else:
             self.fail('Exception not thrown')
@@ -91,8 +89,7 @@ class GoogleTests(GoogleTestCase):
         GoogleDNSMockHttp.type = 'RECORD_DOES_NOT_EXIST'
         try:
             self.driver.get_record('example-com', "A:foo")
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, 'A:foo')
         else:
             self.fail('Exception not thrown')

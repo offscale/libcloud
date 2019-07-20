@@ -58,6 +58,7 @@ class AzureAuthJsonResponse(JsonResponse):
             return str(b)
 
 
+
 class AzureKeyCredential:
     keyId = None  # str
     startDate = None  # str|datetime

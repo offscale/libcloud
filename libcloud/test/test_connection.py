@@ -29,9 +29,18 @@ from libcloud.http import LibcloudBaseConnection
 from libcloud.http import LibcloudConnection
 from libcloud.http import SignedHTTPSAdapter
 from libcloud.utils.misc import retry
+from libcloud.utils.py3 import assertRaisesRegex
 
 
 class BaseConnectionClassTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.orig_proxy = os.environ.pop('http_proxy', None)
+
+    def tearDown(self):
+        if self.orig_proxy:
+            os.environ['http_proxy'] = self.orig_proxy
+
     def test_parse_proxy_url(self):
         conn = LibcloudBaseConnection()
 
@@ -40,8 +49,16 @@ class BaseConnectionClassTestCase(unittest.TestCase):
         self.assertEqual(result[0], 'http')
         self.assertEqual(result[1], '127.0.0.1')
         self.assertEqual(result[2], 3128)
-        self.assertEqual(result[3], None)
-        self.assertEqual(result[4], None)
+        self.assertIsNone(result[3])
+        self.assertIsNone(result[4])
+
+        proxy_url = 'https://127.0.0.2:3129'
+        result = conn._parse_proxy_url(proxy_url=proxy_url)
+        self.assertEqual(result[0], 'https')
+        self.assertEqual(result[1], '127.0.0.2')
+        self.assertEqual(result[2], 3129)
+        self.assertIsNone(result[3])
+        self.assertIsNone(result[4])
 
         proxy_url = 'http://user1:pass1@127.0.0.1:3128'
         result = conn._parse_proxy_url(proxy_url=proxy_url)
@@ -51,41 +68,57 @@ class BaseConnectionClassTestCase(unittest.TestCase):
         self.assertEqual(result[3], 'user1')
         self.assertEqual(result[4], 'pass1')
 
-        proxy_url = 'https://127.0.0.1:3128'
-        expected_msg = 'Only http proxies are supported'
-        self.assertRaisesRegexp(ValueError, expected_msg,
-                                conn._parse_proxy_url,
-                                proxy_url=proxy_url)
+        proxy_url = 'https://user1:pass1@127.0.0.2:3129'
+        result = conn._parse_proxy_url(proxy_url=proxy_url)
+        self.assertEqual(result[0], 'https')
+        self.assertEqual(result[1], '127.0.0.2')
+        self.assertEqual(result[2], 3129)
+        self.assertEqual(result[3], 'user1')
+        self.assertEqual(result[4], 'pass1')
 
         proxy_url = 'http://127.0.0.1'
         expected_msg = 'proxy_url must be in the following format'
-        self.assertRaisesRegexp(ValueError, expected_msg,
-                                conn._parse_proxy_url,
-                                proxy_url=proxy_url)
+        assertRaisesRegex(self, ValueError, expected_msg,
+                          conn._parse_proxy_url,
+                          proxy_url=proxy_url)
 
         proxy_url = 'http://@127.0.0.1:3128'
         expected_msg = 'URL is in an invalid format'
-        self.assertRaisesRegexp(ValueError, expected_msg,
-                                conn._parse_proxy_url,
-                                proxy_url=proxy_url)
+        assertRaisesRegex(self, ValueError, expected_msg,
+                          conn._parse_proxy_url,
+                          proxy_url=proxy_url)
 
         proxy_url = 'http://user@127.0.0.1:3128'
         expected_msg = 'URL is in an invalid format'
-        self.assertRaisesRegexp(ValueError, expected_msg,
-                                conn._parse_proxy_url,
-                                proxy_url=proxy_url)
+        assertRaisesRegex(self, ValueError, expected_msg,
+                          conn._parse_proxy_url,
+                          proxy_url=proxy_url)
 
     def test_constructor(self):
+        proxy_url = 'http://127.0.0.2:3128'
+        os.environ['http_proxy'] = proxy_url
         conn = LibcloudConnection(host='localhost', port=80)
-        self.assertEqual(conn.proxy_scheme, None)
-        self.assertEqual(conn.proxy_host, None)
-        self.assertEqual(conn.proxy_port, None)
+        self.assertEqual(conn.proxy_scheme, 'http')
+        self.assertEqual(conn.proxy_host, '127.0.0.2')
+        self.assertEqual(conn.proxy_port, 3128)
+        self.assertEqual(conn.session.proxies, {
+            'http': 'http://127.0.0.2:3128'
+        })
+
+        _ = os.environ.pop('http_proxy', None)
+        conn = LibcloudConnection(host='localhost', port=80)
+        self.assertIsNone(conn.proxy_scheme)
+        self.assertIsNone(conn.proxy_host)
+        self.assertIsNone(conn.proxy_port)
 
         proxy_url = 'http://127.0.0.3:3128'
         conn.set_http_proxy(proxy_url=proxy_url)
         self.assertEqual(conn.proxy_scheme, 'http')
         self.assertEqual(conn.proxy_host, '127.0.0.3')
         self.assertEqual(conn.proxy_port, 3128)
+        self.assertEqual(conn.session.proxies, {
+            'http': 'http://127.0.0.3:3128'
+        })
 
         proxy_url = 'http://127.0.0.4:3128'
         conn = LibcloudConnection(host='localhost', port=80,
@@ -93,6 +126,9 @@ class BaseConnectionClassTestCase(unittest.TestCase):
         self.assertEqual(conn.proxy_scheme, 'http')
         self.assertEqual(conn.proxy_host, '127.0.0.4')
         self.assertEqual(conn.proxy_port, 3128)
+        self.assertEqual(conn.session.proxies, {
+            'http': 'http://127.0.0.4:3128'
+        })
 
         os.environ['http_proxy'] = proxy_url
         proxy_url = 'http://127.0.0.5:3128'
@@ -101,12 +137,26 @@ class BaseConnectionClassTestCase(unittest.TestCase):
         self.assertEqual(conn.proxy_scheme, 'http')
         self.assertEqual(conn.proxy_host, '127.0.0.5')
         self.assertEqual(conn.proxy_port, 3128)
+        self.assertEqual(conn.session.proxies, {
+            'http': 'http://127.0.0.5:3128'
+        })
+
+        os.environ['http_proxy'] = proxy_url
+        proxy_url = 'https://127.0.0.6:3129'
+        conn = LibcloudConnection(host='localhost', port=80,
+                                  proxy_url=proxy_url)
+        self.assertEqual(conn.proxy_scheme, 'https')
+        self.assertEqual(conn.proxy_host, '127.0.0.6')
+        self.assertEqual(conn.proxy_port, 3129)
+        self.assertEqual(conn.session.proxies, {
+            'https': 'https://127.0.0.6:3129'
+        })
 
     def test_connection_to_unusual_port(self):
         conn = LibcloudConnection(host='localhost', port=8080)
-        self.assertEqual(conn.proxy_scheme, None)
-        self.assertEqual(conn.proxy_host, None)
-        self.assertEqual(conn.proxy_port, None)
+        self.assertIsNone(conn.proxy_scheme)
+        self.assertIsNone(conn.proxy_host)
+        self.assertIsNone(conn.proxy_port)
         self.assertEqual(conn.host, 'http://localhost:8080')
 
         conn = LibcloudConnection(host='localhost', port=80)
@@ -230,9 +280,9 @@ class ConnectionClassTestCase(unittest.TestCase):
         Connection.allow_insecure = False
 
         expected_msg = (r'Non https connections are not allowed \(use '
-                        'secure=True\)')
-        self.assertRaisesRegexp(ValueError, expected_msg, Connection,
-                                secure=False)
+                        r'secure=True\)')
+        assertRaisesRegex(self, ValueError, expected_msg, Connection,
+                          secure=False)
 
     def test_cache_busting(self):
         params1 = {'foo1': 'bar1', 'foo2': 'bar2'}
@@ -325,7 +375,7 @@ class ConnectionClassTestCase(unittest.TestCase):
             mock_connect.__name__ = 'mock_connect'
             with self.assertRaises(socket.gaierror):
                 mock_connect.side_effect = socket.gaierror('')
-                retry_request = retry(timeout=1, retry_delay=.1,
+                retry_request = retry(timeout=0.2, retry_delay=0.1,
                                       backoff=1)
                 retry_request(con.request)(action='/')
 
@@ -341,7 +391,7 @@ class ConnectionClassTestCase(unittest.TestCase):
             mock_connect.__name__ = 'mock_connect'
             with self.assertRaises(socket.gaierror):
                 mock_connect.side_effect = socket.gaierror('')
-                retry_request = retry(timeout=2, retry_delay=.1,
+                retry_request = retry(timeout=0.2, retry_delay=0.1,
                                       backoff=1)
                 retry_request(con.request)(action='/')
 
@@ -357,7 +407,7 @@ class ConnectionClassTestCase(unittest.TestCase):
             mock_connect.__name__ = 'mock_connect'
             with self.assertRaises(socket.gaierror):
                 mock_connect.side_effect = socket.gaierror('')
-                retry_request = retry(timeout=2, retry_delay=.1,
+                retry_request = retry(timeout=0.2, retry_delay=0.1,
                                       backoff=1)
                 retry_request(con.request)(action='/')
 
@@ -375,6 +425,7 @@ class CertificateConnectionClassTestCase(unittest.TestCase):
         adapter = self.connection.connection.session.adapters['https://']
         self.assertTrue(isinstance(adapter, SignedHTTPSAdapter))
         self.assertEqual(adapter.cert_file, 'test.pem')
+
 
 if __name__ == '__main__':
     sys.exit(unittest.main())

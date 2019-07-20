@@ -179,14 +179,14 @@ class TestStorageDevice(unittest.TestCase):
         storagedevice = _StorageDevice(self.image, self.size)
         d = storagedevice.to_dict()
 
-        self.assertEquals(d['storage_device'][0]['tier'], 'maxiops')
+        self.assertEqual(d['storage_device'][0]['tier'], 'maxiops')
 
     def test_storage_tier_given(self):
         self.size.extra['storage_tier'] = 'hdd'
         storagedevice = _StorageDevice(self.image, self.size)
         d = storagedevice.to_dict()
 
-        self.assertEquals(d['storage_device'][0]['tier'], 'hdd')
+        self.assertEqual(d['storage_device'][0]['tier'], 'hdd')
 
 
 class TestUpcloudNodeDestroyer(unittest.TestCase):
@@ -246,8 +246,8 @@ class TestUpcloudNodeDestroyer(unittest.TestCase):
         self.assertTrue(self.destroyer.destroy_node(1))
         self.assertTrue(self.destroyer.destroy_node(1))
 
-        self.assertEquals(self.mock_sleep.call_count, 0)
-        self.assertEquals(self.mock_operations.stop_node.call_count, 2)
+        self.assertEqual(self.mock_sleep.call_count, 0)
+        self.assertEqual(self.mock_operations.stop_node.call_count, 2)
 
     def test_timeout(self):
         self.mock_operations.get_node_state.side_effect = ['maintenance'] * 50
@@ -276,10 +276,10 @@ class TestPlanPrice(unittest.TestCase):
 
     def test_plan_not_found_in_zone(self):
         location = NodeLocation(id='no_such_location', name='', country='', driver=None)
-        self.assertEqual(self.pp.get_price('1xCPU-1GB', location), None)
+        self.assertIsNone(self.pp.get_price('1xCPU-1GB', location))
 
     def test_no_location_given(self):
-        self.assertEqual(self.pp.get_price('1xCPU-1GB'), None)
+        self.assertIsNone(self.pp.get_price('1xCPU-1GB'))
 
 
 if __name__ == '__main__':

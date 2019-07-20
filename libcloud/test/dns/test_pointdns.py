@@ -278,7 +278,7 @@ class PointDNSTests(unittest.TestCase):
         self.assertEqual(redirect1.name, 'redirect2.domain1.com.')
         self.assertEqual(redirect1.type, '302')
         self.assertEqual(redirect1.data, 'http://other.com')
-        self.assertEqual(redirect1.iframe, None)
+        self.assertIsNone(redirect1.iframe)
         self.assertEqual(redirect1.query, False)
         self.assertEqual(zone, redirect1.zone)
 
@@ -287,7 +287,7 @@ class PointDNSTests(unittest.TestCase):
         self.assertEqual(redirect2.name, 'redirect1.domain1.com.')
         self.assertEqual(redirect2.type, '302')
         self.assertEqual(redirect2.data, 'http://someother.com')
-        self.assertEqual(redirect2.iframe, None)
+        self.assertIsNone(redirect2.iframe)
         self.assertEqual(redirect2.query, False)
         self.assertEqual(zone, redirect1.zone)
 
@@ -335,8 +335,7 @@ class PointDNSTests(unittest.TestCase):
             self.driver.ex_create_redirect('http://other.com', 'redirect2',
                                            '302', zone, iframe='An Iframe',
                                            query=True)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -361,8 +360,7 @@ class PointDNSTests(unittest.TestCase):
         try:
             self.driver.ex_create_mail_redirect('user@example-site.com',
                                                 'admin', zone)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -377,7 +375,7 @@ class PointDNSTests(unittest.TestCase):
         self.assertEqual(redirect.name, 'redirect2.domain1.com.')
         self.assertEqual(redirect.type, '302')
         self.assertEqual(redirect.data, 'http://other.com')
-        self.assertEqual(redirect.iframe, None)
+        self.assertIsNone(redirect.iframe)
         self.assertEqual(redirect.query, False)
         self.assertEqual(zone.id, redirect.zone.id)
 
@@ -387,8 +385,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'GET_WITH_ERROR'
         try:
             self.driver.ex_get_redirect(zone.id, '36843229')
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -401,8 +398,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'GET_NOT_FOUND'
         try:
             self.driver.ex_get_redirect(zone.id, '36843229')
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             self.assertEqual(e.http_code, httplib.NOT_FOUND)
             self.assertEqual(e.value, "Couldn't found redirect")
         else:
@@ -423,8 +419,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'GET_WITH_ERROR'
         try:
             self.driver.ex_get_mail_redirects(zone.id, '5')
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -442,7 +437,7 @@ class PointDNSTests(unittest.TestCase):
         self.assertEqual(_redirect.name, 'redirect3.domain1.com.')
         self.assertEqual(_redirect.type, '302')
         self.assertEqual(_redirect.data, 'http://updatedother.com')
-        self.assertEqual(_redirect.iframe, None)
+        self.assertIsNone(_redirect.iframe)
         self.assertEqual(_redirect.query, False)
         self.assertEqual(zone.id, _redirect.zone.id)
 
@@ -454,8 +449,7 @@ class PointDNSTests(unittest.TestCase):
         try:
             self.driver.ex_update_redirect(
                 redirect, 'http://updatedother.com', 'redirect3', '302')
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -483,8 +477,7 @@ class PointDNSTests(unittest.TestCase):
         try:
             self.driver.ex_update_mail_redirect(
                 mailredirect, 'new_user@example-site.com', 'new_admin')
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -506,8 +499,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'DELETE_WITH_ERROR'
         try:
             self.driver.ex_delete_redirect(redirect)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -521,8 +513,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'DELETE_NOT_FOUND'
         try:
             self.driver.ex_delete_redirect(redirect)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             self.assertEqual(e.http_code, httplib.NOT_FOUND)
             self.assertEqual(e.value, "Couldn't found redirect")
         else:
@@ -543,8 +534,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'DELETE_WITH_ERROR'
         try:
             self.driver.ex_delete_mail_redirect(mailredirect)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             # The API actually responds with httplib.UNPROCESSABLE_ENTITY code,
             # but httplib.responses doesn't have it.
             self.assertEqual(e.http_code, httplib.METHOD_NOT_ALLOWED)
@@ -558,8 +548,7 @@ class PointDNSTests(unittest.TestCase):
         PointDNSMockHttp.type = 'DELETE_NOT_FOUND'
         try:
             self.driver.ex_delete_mail_redirect(mailredirect)
-        except PointDNSException:
-            e = sys.exc_info()[1]
+        except PointDNSException as e:
             self.assertEqual(e.http_code, httplib.NOT_FOUND)
             self.assertEqual(e.value, "Couldn't found mail redirect")
         else:

@@ -114,7 +114,7 @@ class OneAndOneTests(unittest.TestCase):
         self.assertEqual(node.name, "Docs Content Test Server: CentOS 7-1")
         self.assertEqual(node.extra["description"], "My server description")
 
-        self.assertEqual(node.extra["status"]["percent"], None)
+        self.assertIsNone(node.extra["status"]["percent"])
         self.assertEqual(node.extra["status"]["state"], "POWERED_ON")
 
         self.assertEqual(node.extra["image"]["id"],
@@ -142,11 +142,11 @@ class OneAndOneTests(unittest.TestCase):
                          "FDBE99EDD57F8596CBF71B6B64BD0A92")
         self.assertEqual(node.extra["ips"][0]["ip"], "62.151.179.99")
 
-        self.assertEqual(node.extra["monitoring_policy"], None)
+        self.assertIsNone(node.extra["monitoring_policy"])
         self.assertEqual(node.extra["alerts"], [])
-        self.assertEqual(node.extra["snapshot"], None)
-        self.assertEqual(node.extra["dvd"], None)
-        self.assertEqual(node.extra["private_networks"], None)
+        self.assertIsNone(node.extra["snapshot"])
+        self.assertIsNone(node.extra["dvd"])
+        self.assertIsNone(node.extra["private_networks"])
 
     def test_ex_list_datacenters(self):
         datacenters = self.driver.ex_list_datacenters()
@@ -271,11 +271,6 @@ class OneAndOneTests(unittest.TestCase):
             .ex_get_server_firewall_policies("srv_id", "ip_id")
         self.assertNotEqual(firewall, None)
 
-    def test_ex_remove_server_firewall_policies(self):
-        node = self.driver \
-            .ex_remove_server_firewall_policy("srv_id", "ip_id")
-        self.assertNotEqual(node, None)
-
     def test_ex_add_server_firewall_policy(self):
         node = self.driver \
             .ex_add_server_firewall_policy("srv_id", "ip_id", "fw_id")
@@ -283,7 +278,7 @@ class OneAndOneTests(unittest.TestCase):
 
     def test_ex_list_shared_storages(self):
         storages = self.driver.ex_list_shared_storages()
-        self.assertEquals(len(storages), 3)
+        self.assertEqual(len(storages), 3)
 
     def test_ex_get_shared_storage(self):
         storage = self.driver.ex_get_shared_storage('storage_1')

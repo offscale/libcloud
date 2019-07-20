@@ -1,3 +1,18 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import sys
 import unittest
 
@@ -41,7 +56,7 @@ class DNSPodDNSTests(unittest.TestCase):
         zone = zones[0]
         self.assertEqual(zone.id, '6')
         self.assertEqual(zone.domain, 'dnspod.com')
-        self.assertEqual(zone.type, None)
+        self.assertIsNone(zone.type)
         self.assertEqual(zone.driver, self.driver)
         self.assertEqual(zone.ttl, '600')
 
@@ -49,8 +64,7 @@ class DNSPodDNSTests(unittest.TestCase):
         DNSPodMockHttp.type = 'ZONE_DOES_NOT_EXIST'
         try:
             self.driver.get_zone(zone_id='13')
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, '13')
         else:
             self.fail('Exception was not thrown')
@@ -61,7 +75,7 @@ class DNSPodDNSTests(unittest.TestCase):
 
         self.assertEqual(zone.id, '6')
         self.assertEqual(zone.domain, 'dnspod.com')
-        self.assertEqual(zone.type, None)
+        self.assertIsNone(zone.type)
         self.assertEqual(zone.ttl, '600')
         self.assertEqual(zone.driver, self.driver)
 
@@ -77,8 +91,7 @@ class DNSPodDNSTests(unittest.TestCase):
         zone = self.test_zone
         try:
             self.driver.delete_zone(zone=zone)
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, '11')
         else:
             self.fail('Exception was not thrown')
@@ -89,16 +102,15 @@ class DNSPodDNSTests(unittest.TestCase):
 
         self.assertEqual(zone.id, '3')
         self.assertEqual(zone.domain, 'api2.com')
-        self.assertEqual(zone.type, None)
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.type)
+        self.assertIsNone(zone.ttl)
         self.assertEqual(zone.driver, self.driver)
 
     def test_create_zone_zone_zone_already_exists(self):
         DNSPodMockHttp.type = 'CREATE_ZONE_ZONE_ALREADY_EXISTS'
         try:
             self.driver.create_zone(domain='test.com')
-        except ZoneAlreadyExistsError:
-            e = sys.exc_info()[1]
+        except ZoneAlreadyExistsError as e:
             self.assertEqual(e.zone_id, 'test.com')
         else:
             self.fail('Exception was not thrown')
@@ -136,8 +148,7 @@ class DNSPodDNSTests(unittest.TestCase):
         record = self.test_record
         try:
             self.driver.delete_record(record=record)
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, '13')
         else:
             self.fail('Exception was not thrown')
@@ -151,7 +162,7 @@ class DNSPodDNSTests(unittest.TestCase):
         self.assertEqual(record.id, '50')
         self.assertEqual(record.name, '@')
         self.assertEqual(record.data, '96.126.115.73')
-        self.assertEqual(record.ttl, None)
+        self.assertIsNone(record.ttl)
 
     def test_create_record_already_exists_error(self):
         DNSPodMockHttp.type = 'RECORD_EXISTS'
@@ -160,8 +171,7 @@ class DNSPodDNSTests(unittest.TestCase):
                                       type='A', data='92.126.115.73',
                                       extra={'ttl': 13,
                                              'record_line': 'default'})
-        except RecordAlreadyExistsError:
-            e = sys.exc_info()[1]
+        except RecordAlreadyExistsError as e:
             self.assertEqual(e.value, '@')
         else:
             self.fail('Exception was not thrown')

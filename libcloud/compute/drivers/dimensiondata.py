@@ -4366,7 +4366,7 @@ class DimensionDataNodeDriver(NodeDriver):
         location = list(filter(lambda x: x.id == location_id,
                                locations))[0]
         plan = findtext(element, 'type', TYPES_URN)
-        if plan is 'ESSENTIALS':
+        if plan == 'ESSENTIALS':
             plan_type = NetworkDomainServicePlan.ESSENTIALS
         else:
             plan_type = NetworkDomainServicePlan.ADVANCED
@@ -4425,11 +4425,11 @@ class DimensionDataNodeDriver(NodeDriver):
         return locations
 
     def _to_location(self, element):
-        l = NodeLocation(id=element.get('id'),
-                         name=findtext(element, 'displayName', TYPES_URN),
-                         country=findtext(element, 'country', TYPES_URN),
-                         driver=self)
-        return l
+        loc = NodeLocation(id=element.get('id'),
+                           name=findtext(element, 'displayName', TYPES_URN),
+                           country=findtext(element, 'country', TYPES_URN),
+                           driver=self)
+        return loc
 
     def _to_cpu_spec(self, element):
         return DimensionDataServerCpuSpecification(
@@ -4495,10 +4495,17 @@ class DimensionDataNodeDriver(NodeDriver):
                 'operatingSystem', TYPES_URN))
         # Version 2.4 or later
         else:
-            vmtools_elm = fixxpath('guest/vmTools', TYPES_URN)
+            # vmtools_elm = fixxpath('guest/vmTools', TYPES_URN)
+            vmtools_elm = element.find(fixxpath('guest/vmTools', TYPES_URN))
             if vmtools_elm is not None:
                 vmware_tools = self._to_vmware_tools(vmtools_elm)
-
+            else:
+                vmware_tools = \
+                    DimensionDataServerVMWareTools(
+                        status=None,
+                        version_status=None,
+                        api_version=None
+                    )
             operation_system = element.find(fixxpath(
                 'guest/operatingSystem', TYPES_URN))
 

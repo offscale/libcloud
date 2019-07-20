@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
 # this work for additional information regarding copyright ownership.
@@ -14,12 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-import urllib2
+import os
 
+import requests
 
-key = sys.argv[1]
-url = 'https://readthedocs.org/build/%s' % (key)
-req = urllib2.Request(url, '')
-f = urllib2.urlopen(req)
-print f.read()
+# Old deprecated API
+url = 'https://readthedocs.org/build/8284/'
+r = requests.post(url)
+print(r.text)
+
+# New API (which doesn't apear to be working)
+token = os.environ['RTD_TOKEN']
+
+url = 'https://readthedocs.org/api/v2/webhook/libcloud/87656/'
+r = requests.post(url, data={'token': token, 'branches': 'trunk'})
+print(r.text)

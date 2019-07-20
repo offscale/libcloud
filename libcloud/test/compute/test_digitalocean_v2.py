@@ -24,6 +24,7 @@ except ImportError:
     import json  # NOQA
 
 from libcloud.utils.py3 import httplib
+from libcloud.utils.py3 import assertRaisesRegex
 
 from libcloud.common.types import InvalidCredsError
 from libcloud.common.digitalocean import DigitalOcean_v1_Error
@@ -81,11 +82,17 @@ class DigitalOcean_v2_Tests(LibcloudTestCase):
 
     def test_list_locations_success(self):
         locations = self.driver.list_locations()
-        self.assertTrue(len(locations) >= 1)
+        self.assertTrue(len(locations) == 2)
 
         location = locations[0]
         self.assertEqual(location.id, 'nyc1')
         self.assertEqual(location.name, 'New York 1')
+
+        locations = self.driver.list_locations(ex_available=True)
+        self.assertTrue(len(locations) == 2)
+
+        locations = self.driver.list_locations(ex_available=False)
+        self.assertTrue(len(locations) == 3)
 
     def test_list_nodes_success(self):
         nodes = self.driver.list_nodes()
@@ -108,10 +115,10 @@ class DigitalOcean_v2_Tests(LibcloudTestCase):
         DigitalOceanMockHttp.type = 'INVALID_IMAGE'
         expected_msg = \
             r'You specified an invalid image for Droplet creation. \(code: (404|HTTPStatus.NOT_FOUND)\)'
-        self.assertRaisesRegexp(Exception, expected_msg,
-                                self.driver.create_node,
-                                name='test', size=size, image=image,
-                                location=location)
+        assertRaisesRegex(self, Exception, expected_msg,
+                          self.driver.create_node,
+                          name='test', size=size, image=image,
+                          location=location)
 
     def test_reboot_node_success(self):
         node = self.driver.list_nodes()[0]
@@ -292,6 +299,14 @@ class DigitalOcean_v2_Tests(LibcloudTestCase):
         result = self.driver.delete_volume_snapshot(snapshot)
         self.assertTrue(result)
 
+    def test_ex_get_node_details(self):
+        node = self.driver.ex_get_node_details('3164444')
+        self.assertEqual(node.name, 'example.com')
+        self.assertEqual(node.public_ips, ['36.123.0.123'])
+        self.assertEqual(node.extra['image']['id'], 12089443)
+        self.assertEqual(node.extra['size_slug'], '8gb')
+        self.assertEqual(len(node.extra['tags']), 2)
+
     def test_ex_create_floating_ip(self):
         nyc1 = [r for r in self.driver.list_locations() if r.id == 'nyc1'][0]
         floating_ip = self.driver.ex_create_floating_ip(nyc1)
@@ -375,6 +390,10 @@ class DigitalOceanMockHttp(MockHttp):
 
     def _v2_droplets(self, method, url, body, headers):
         body = self.fixtures.load('list_nodes.json')
+        return (httplib.OK, body, {}, httplib.responses[httplib.OK])
+
+    def _v2_droplets_3164444(self, method, url, body, headers):
+        body = self.fixtures.load('list_node.json')
         return (httplib.OK, body, {}, httplib.responses[httplib.OK])
 
     def _v2_droplets_INVALID_IMAGE(self, method, url, body, headers):

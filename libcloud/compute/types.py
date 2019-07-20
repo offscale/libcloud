@@ -79,6 +79,7 @@ class Provider(Type):
     :cvar EXOSCALE: Exoscale driver.
     :cvar GCE: Google Compute Engine
     :cvar GOGRID: GoGrid
+    :cvar GRIDSCALE: gridscale
     :cvar GRIDSPOT: Gridspot driver
     :cvar IBM: IBM Developer Cloud
     :cvar IKOULA: Ikoula driver.
@@ -89,6 +90,7 @@ class Provider(Type):
     :cvar NEPHOSCALE: NephoScale driver
     :cvar NIMBUS: Nimbus
     :cvar NINEFOLD: Ninefold
+    :cvar NTTC-CIS: NTT Communications CIS
     :cvar OPENNEBULA: OpenNebula.org
     :cvar OPSOURCE: Opsource Cloud
     :cvar OUTSCALE_INC: Outscale INC driver.
@@ -130,6 +132,7 @@ class Provider(Type):
     GANDI = 'gandi'
     GCE = 'gce'
     GOGRID = 'gogrid'
+    GRIDSCALE = 'gridscale'
     GRIDSPOT = 'gridspot'
     HOSTVIRTUAL = 'hostvirtual'
     IBM = 'ibm'
@@ -140,11 +143,13 @@ class Provider(Type):
     KTUCLOUD = 'ktucloud'
     LIBVIRT = 'libvirt'
     LINODE = 'linode'
+    MAXIHOST = 'maxihost'
     MEDONE = 'medone'
     NEPHOSCALE = 'nephoscale'
     NIMBUS = 'nimbus'
     NINEFOLD = 'ninefold'
     NTTA = 'ntta'
+    NTTCIS = 'nttcis'
     ONEANDONE = 'oneandone'
     OPENNEBULA = 'opennebula'
     OPENSTACK = 'openstack'
@@ -158,6 +163,7 @@ class Provider(Type):
     RACKSPACE_FIRST_GEN = 'rackspace_first_gen'
     RIMUHOSTING = 'rimuhosting'
     RUNABOVE = 'runabove'
+    SCALEWAY = 'scaleway'
     SERVERLOVE = 'serverlove'
     SKALICLOUD = 'skalicloud'
     SOFTLAYER = 'softlayer'

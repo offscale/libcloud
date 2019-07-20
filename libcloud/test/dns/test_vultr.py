@@ -53,32 +53,31 @@ class VultrTests(unittest.TestCase):
         self.assertEqual(zone.id, 'example.com')
         self.assertEqual(zone.type, 'master')
         self.assertEqual(zone.domain, 'example.com')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
         zone = zones[1]
         self.assertEqual(zone.id, 'zupo.com')
         self.assertEqual(zone.type, 'master')
         self.assertEqual(zone.domain, 'zupo.com')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
         zone = zones[2]
         self.assertEqual(zone.id, 'oltjano.com')
         self.assertEqual(zone.type, 'master')
         self.assertEqual(zone.domain, 'oltjano.com')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
         zone = zones[3]
         self.assertEqual(zone.id, '13.com')
         self.assertEqual(zone.type, 'master')
         self.assertEqual(zone.domain, '13.com')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
     def test_get_zone_zone_does_not_exist(self):
         VultrMockHttp.type = 'GET_ZONE_ZONE_DOES_NOT_EXIST'
         try:
             self.driver.get_zone(zone_id='test.com')
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, 'test.com')
         else:
             self.fail('Exception was not thrown')
@@ -90,15 +89,14 @@ class VultrTests(unittest.TestCase):
         self.assertEqual(zone.id, 'zupo.com')
         self.assertEqual(zone.domain, 'zupo.com')
         self.assertEqual(zone.type, 'master')
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
     def test_delete_zone_zone_does_not_exist(self):
         VultrMockHttp.type = 'DELETE_ZONE_ZONE_DOES_NOT_EXIST'
 
         try:
             self.driver.delete_zone(zone=self.test_zone)
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, self.test_zone.id)
         else:
             self.fail('Exception was not thrown')
@@ -116,7 +114,7 @@ class VultrTests(unittest.TestCase):
         self.assertEqual(zone.id, 'test.com')
         self.assertEqual(zone.domain, 'test.com')
         self.assertEqual(zone.type, 'master'),
-        self.assertEqual(zone.ttl, None)
+        self.assertIsNone(zone.ttl)
 
     def test_create_zone_zone_already_exists(self):
         VultrMockHttp.type = 'CREATE_ZONE_ZONE_ALREADY_EXISTS'
@@ -124,8 +122,7 @@ class VultrTests(unittest.TestCase):
         try:
             self.driver.create_zone(domain='example.com',
                                     extra={'serverip': '127.0.0.1'})
-        except ZoneAlreadyExistsError:
-            e = sys.exc_info()[1]
+        except ZoneAlreadyExistsError as e:
             self.assertEqual(e.zone_id, 'example.com')
         else:
             self.fail('Exception was not thrown')
@@ -135,8 +132,7 @@ class VultrTests(unittest.TestCase):
 
         try:
             self.driver.get_record(zone_id='zupo.com', record_id='1300')
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, '1300')
         else:
             self.fail('Exception was not thrown')
@@ -146,8 +142,7 @@ class VultrTests(unittest.TestCase):
 
         try:
             self.driver.list_records(zone=self.test_zone)
-        except ZoneDoesNotExistError:
-            e = sys.exc_info()[1]
+        except ZoneDoesNotExistError as e:
             self.assertEqual(e.zone_id, self.test_zone.id)
         else:
             self.fail('Exception was not thrown')
@@ -184,8 +179,7 @@ class VultrTests(unittest.TestCase):
 
         try:
             self.driver.delete_record(record=self.test_record)
-        except RecordDoesNotExistError:
-            e = sys.exc_info()[1]
+        except RecordDoesNotExistError as e:
             self.assertEqual(e.record_id, self.test_record.id)
         else:
             self.fail('Exception was not thrown')
