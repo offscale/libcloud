@@ -314,7 +314,7 @@ class OpenStack_1_0_Tests(TestCaseMixin, unittest.TestCase):
         metadata = {'a': 'b', 'c': 'd'}
         files = {'/file1': 'content1', '/file2': 'content2'}
         node = self.driver.create_node(name='racktest', image=image, size=size,
-                                       metadata=metadata, files=files)
+                                       ex_metadata=metadata, ex_files=files)
         self.assertEqual(node.name, 'racktest')
         self.assertEqual(node.extra.get('password'), 'racktestvJq7d3')
         self.assertEqual(node.extra.get('metadata'), metadata)
@@ -950,7 +950,7 @@ class OpenStack_1_1_Tests(unittest.TestCase, TestCaseMixin):
         size = NodeSize(
             1, '256 slice', None, None, None, None, driver=self.driver)
         node = self.driver.create_node(name='racktest', image=image, size=size,
-                                       availability_zone='testaz')
+                                       ex_availability_zone='testaz')
         self.assertEqual(node.id, '26f7fbee-8ce1-4c28-887a-bfe8e4bb10fe')
         self.assertEqual(node.name, 'racktest')
         self.assertEqual(node.extra['password'], 'racktestvJq7d3')
@@ -980,6 +980,26 @@ class OpenStack_1_1_Tests(unittest.TestCase, TestCaseMixin):
         self.assertEqual(node.id, '26f7fbee-8ce1-4c28-887a-bfe8e4bb10fe')
         self.assertEqual(node.name, 'racktest')
         self.assertTrue(node.extra['config_drive'])
+
+    def test_create_node_from_bootable_volume(self):
+        size = NodeSize(
+            1, '256 slice', None, None, None, None, driver=self.driver)
+
+        node = self.driver.create_node(
+            name='racktest', size=size,
+            ex_blockdevicemappings=[
+                {
+                    'boot_index': 0,
+                    'uuid': 'ee7ee330-b454-4414-8e9f-c70c558dd3af',
+                    'source_type': 'volume',
+                    'destination_type': 'volume',
+                    'delete_on_termination': False
+                }])
+
+        self.assertEqual(node.id, '26f7fbee-8ce1-4c28-887a-bfe8e4bb10fe')
+        self.assertEqual(node.name, 'racktest')
+        self.assertEqual(node.extra['password'], 'racktestvJq7d3')
+        self.assertEqual(node.extra['metadata']['My Server Name'], 'Apache1')
 
     def test_destroy_node(self):
         self.assertTrue(self.node.destroy())
@@ -1027,6 +1047,16 @@ class OpenStack_1_1_Tests(unittest.TestCase, TestCaseMixin):
             'cd76a3a1-c4ce-40f6-9b9f-07a61508938d')
         self.assertEqual(
             self.driver.attach_volume(node, volume, '/dev/sdb'), True)
+
+    def test_attach_volume_device_auto(self):
+        node = self.driver.list_nodes()[0]
+        volume = self.driver.ex_get_volume(
+            'cd76a3a1-c4ce-40f6-9b9f-07a61508938d')
+
+        OpenStack_2_0_MockHttp.type = 'DEVICE_AUTO'
+
+        self.assertEqual(
+            self.driver.attach_volume(node, volume, 'auto'), True)
 
     def test_detach_volume(self):
         node = self.driver.list_nodes()[0]
@@ -1422,6 +1452,11 @@ class OpenStack_1_1_Tests(unittest.TestCase, TestCaseMixin):
         self.assertEqual(ret[2].ip_address, '10.3.1.2')
         self.assertEqual(
             ret[2].node_id, 'cb4fba64-19e2-40fd-8497-f29da1b21143')
+        self.assertEqual(ret[3].id, '123c5336a-0629-4694-ba30-04b0bdfa88a4')
+        self.assertEqual(ret[3].pool, pool)
+        self.assertEqual(ret[3].ip_address, '10.3.1.3')
+        self.assertEqual(
+            ret[3].node_id, 'cb4fba64-19e2-40fd-8497-f29da1b21143')
 
     def test_OpenStack_2_FloatingIpPool_get_floating_ip(self):
         pool = OpenStack_2_FloatingIpPool(1, 'foo', self.driver.connection)
@@ -1907,7 +1942,7 @@ class OpenStack_2_Tests(OpenStack_1_1_Tests):
     def test_ex_update_port(self):
         port = self.driver.ex_get_port('126da55e-cfcb-41c8-ae39-a26cb8a7e723')
         ret = self.driver.ex_update_port(port, port_security_enabled=False)
-        self.assertEqual(port.extra['name'], 'Some port name')
+        self.assertEqual(ret.extra['name'], 'Some port name')
 
     def test_detach_port_interface(self):
         node = Node(id='1c01300f-ef97-4937-8f03-ac676d6234be', name=None,
@@ -1998,6 +2033,21 @@ class OpenStack_2_Tests(OpenStack_1_1_Tests):
             name, args, kwargs = mock_request.mock_calls[0]
             self.assertFalse("volume_type" in kwargs["data"]["volume"])
 
+    def test_create_volume_passes_image_ref_to_request_only_if_not_none(self):
+        with patch.object(self.driver.volumev2_connection, 'request') as mock_request:
+            self.driver.create_volume(
+                1, 'test', ex_image_ref='353c4bd2-b28f-4857-9b7b-808db4397d03')
+            name, args, kwargs = mock_request.mock_calls[0]
+            self.assertEqual(
+                kwargs["data"]["volume"]["imageRef"],
+                "353c4bd2-b28f-4857-9b7b-808db4397d03")
+
+    def test_create_volume_does_not_pass_image_ref_to_request_if_none(self):
+        with patch.object(self.driver.volumev2_connection, 'request') as mock_request:
+            self.driver.create_volume(1, 'test')
+            name, args, kwargs = mock_request.mock_calls[0]
+            self.assertFalse("imageRef" in kwargs["data"]["volume"])
+
     def test_ex_create_snapshot_does_not_post_optional_parameters_if_none(self):
         volume = self.driver.list_volumes()[0]
         with patch.object(self.driver, '_to_snapshot'):
@@ -2046,6 +2096,12 @@ class OpenStack_2_Tests(OpenStack_1_1_Tests):
         self.assertEqual(
             self.driver.attach_volume(node, volume, '/dev/sdb'), True)
         self.assertEqual(self.driver.detach_volume(volume), True)
+
+    def test_ex_remove_security_group_from_node(self):
+        security_group = OpenStackSecurityGroup("sgid", None, "sgname", "", self.driver)
+        node = Node("1000", "node", None, [], [], self.driver)
+        ret = self.driver.ex_remove_security_group_from_node(security_group, node)
+        self.assertTrue(ret)
 
 
 class OpenStack_1_1_FactoryMethodTests(OpenStack_1_1_Tests):
@@ -2277,8 +2333,22 @@ class OpenStack_1_1_MockHttp(MockHttp, unittest.TestCase):
             body = self.fixtures.load('_port_v2.json')
             return (httplib.OK, body, self.json_content_headers, httplib.responses[httplib.OK])
         elif method == "PUT":
-            body = self.fixtures.load('_port_v2.json')
-            return (httplib.OK, body, self.json_content_headers, httplib.responses[httplib.OK])
+            if body:
+                body = self.fixtures.load('_port_v2.json')
+                return (httplib.OK, body, self.json_content_headers, httplib.responses[httplib.OK])
+            else:
+                return (httplib.INTERNAL_SERVER_ERROR, "", {}, httplib.responses[httplib.INTERNAL_SERVER_ERROR])
+        else:
+            raise NotImplementedError()
+
+    def _v2_1337_servers_12065_os_volume_attachments_DEVICE_AUTO(self, method, url, body, headers):
+        # test_attach_volume_device_auto
+        if method == "POST":
+            if 'rackspace' not in self.__class__.__name__.lower():
+                body = json.loads(body)
+                self.assertEqual(body['volumeAttachment']['device'], None)
+
+            return (httplib.NO_CONTENT, "", {}, httplib.responses[httplib.NO_CONTENT])
         else:
             raise NotImplementedError()
 
@@ -2392,6 +2462,10 @@ class OpenStack_1_1_MockHttp(MockHttp, unittest.TestCase):
 
     def _v1_1_slug_servers_12065_os_volume_attachments(self, method, url, body, headers):
         if method == "POST":
+            if 'rackspace' not in self.__class__.__name__.lower():
+                body = json.loads(body)
+                self.assertEqual(body['volumeAttachment']['device'], '/dev/sdb')
+
             body = self.fixtures.load(
                 '_servers_12065_os_volume_attachments.json')
         else:
@@ -2638,7 +2712,7 @@ class OpenStack_1_1_MockHttp(MockHttp, unittest.TestCase):
         if method == 'GET':
             body = self.fixtures.load('_v2_0__floatingips.json')
             return (httplib.OK, body, self.json_content_headers, httplib.responses[httplib.OK])
-    
+
     def _v2_1337_v2_0_floatingips_foo_bar_id(self, method, url, body, headers):
         if method == 'DELETE':
             body = ''
@@ -2671,6 +2745,11 @@ class OpenStack_1_1_MockHttp(MockHttp, unittest.TestCase):
         if method == 'PUT':
             body = self.fixtures.load('_v2_0__router_interface.json')
             return (httplib.OK, body, self.json_content_headers, httplib.responses[httplib.OK])
+
+    def _v2_1337_servers_1000_action(self, method, url, body, headers):
+        if method != 'POST' or body != '{"removeSecurityGroup": {"name": "sgname"}}':
+            raise NotImplementedError(body)
+        return httplib.ACCEPTED, None, {}, httplib.responses[httplib.ACCEPTED]
 # This exists because the nova compute url in devstack has v2 in there but the v1.1 fixtures
 # work fine.
 

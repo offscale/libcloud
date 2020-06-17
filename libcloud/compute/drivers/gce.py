@@ -12,13 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """
 Module for Google Compute Engine Driver.
 """
+
 from __future__ import with_statement
 
 import datetime
 import time
+import itertools
 import sys
 
 from libcloud.common.base import LazyObject
@@ -131,7 +134,7 @@ class GCEConnection(GoogleBaseConnection):
 
         return response
 
-    def request_aggregated_items(self, api_name):
+    def request_aggregated_items(self, api_name, zone=None):
         """
         Perform request(s) to obtain all results from 'api_name'.
 
@@ -143,12 +146,19 @@ class GCEConnection(GoogleBaseConnection):
                   for valid names.
         :type     api_name: ``str``
 
+        :param   zone: Optional zone to use.
+        :type zone: :class:`GCEZone`
+
         :return:  dict in the format of the API response.
                   format: { 'items': {'key': {api_name: []}} }
                   ex: { 'items': {'zones/us-central1-a': {disks: []}} }
         :rtype:   ``dict``
         """
-        request_path = "/aggregated/%s" % api_name
+        if zone:
+            request_path = "/zones/%s/%s" % (zone.name, api_name)
+        else:
+            request_path = "/aggregated/%s" % (api_name)
+
         api_responses = []
 
         params = {'maxResults': 500}
@@ -157,6 +167,15 @@ class GCEConnection(GoogleBaseConnection):
             self.gce_params = params
             response = self.request(request_path, method='GET').object
             if 'items' in response:
+                if zone:
+                    # Special case when we are handling pagination for a
+                    # specific zone
+                    items = response['items']
+                    response['items'] = {
+                        'zones/%s' % (zone): {
+                            api_name: items
+                        }
+                    }
                 api_responses.append(response)
             more_results = 'pageToken' in params
         return self._merge_response_items(api_name, api_responses)
@@ -899,7 +918,8 @@ class GCEProject(UuidMixin):
         :return: True if successful
         :rtype:  ``bool``
         """
-        return self.driver.ex_set_common_instance_metadata(self, metadata)
+        return self.driver.ex_set_common_instance_metadata(metadata=metadata,
+                                                           force=force)
 
     def set_usage_export_bucket(self, bucket, prefix=None):
         """
@@ -921,7 +941,8 @@ class GCEProject(UuidMixin):
         :return: True if successful
         :rtype:  ``bool``
         """
-        return self.driver.ex_set_usage_export_bucket(self, bucket, prefix)
+        return self.driver.ex_set_usage_export_bucket(bucket=bucket,
+                                                      prefix=prefix)
 
     def __repr__(self):
         return '<GCEProject id="%s" name="%s">' % (self.id, self.name)
@@ -1733,6 +1754,7 @@ class GCENodeDriver(NodeDriver):
     name = "Google Compute Engine"
     type = Provider.GCE
     website = 'https://cloud.google.com/'
+    features = {'create_node': ['ssh_key']}
 
     # Google Compute Engine node states are mapped to Libcloud node states
     # per the following dict. GCE does not have an actual 'stopped' state
@@ -1778,11 +1800,20 @@ class GCENodeDriver(NodeDriver):
         "userinfo-email": "userinfo.email"
     }
 
+    # data taken from https://cloud.google.com/compute/docs/images
     IMAGE_PROJECTS = {
-        "centos-cloud": ["centos-6", "centos-7"],
+        "centos-cloud": [
+            "centos-6",
+            "centos-7",
+            "centos-8",
+        ],
         "cos-cloud": ["cos-beta", "cos-dev", "cos-stable"],
         "coreos-cloud": ["coreos-alpha", "coreos-beta", "coreos-stable"],
-        "debian-cloud": ["debian-8", "debian-9"],
+        "debian-cloud": [
+            "debian-8",
+            "debian-9",
+            "debian-10",
+        ],
         "opensuse-cloud": ["opensuse-leap"],
         "rhel-cloud": [
             "rhel-6",
@@ -1816,6 +1847,10 @@ class GCENodeDriver(NodeDriver):
             "ubuntu-minimal-1810",
             "ubuntu-1904",
             "ubuntu-minimal-1904",
+            "ubuntu-1910",
+            "ubuntu-minimal-1910",
+            "ubuntu-2004-lts",
+            "ubuntu-minimal-2004-lts",
         ],
         "windows-cloud": [
             "windows-1709-core-for-containers", "windows-1709-core",
@@ -2051,6 +2086,31 @@ class GCENodeDriver(NodeDriver):
         current_fp = image.extra['labelFingerprint']
         body = {'labels': labels, 'labelFingerprint': current_fp}
         request = '/global/%s/setLabels' % (image.name)
+        self.connection.async_request(request, method='POST', data=body)
+        return True
+
+    def ex_set_volume_labels(self, volume, labels):
+        """
+        Set labels for the specified volume (disk).
+
+        :keyword  volume: The existing target StorageVolume for the request.
+        :type     volume: ``StorageVolume``
+
+        :keyword  labels: Set (or clear with None) labels for this image.
+        :type     labels: ``dict`` or ``None``
+
+        :return: True if successful
+        :rtype:  ``bool``
+        """
+
+        if not isinstance(volume, StorageVolume):
+            raise ValueError("Must specify a valid libcloud volume object.")
+
+        volume_name = volume.name
+        zone_name = volume.extra['zone'].name
+        current_fp = volume.extra['labelFingerprint']
+        body = {'labels': labels, 'labelFingerprint': current_fp}
+        request = '/zones/%s/disks/%s/setLabels' % (zone_name, volume_name)
         self.connection.async_request(request, method='POST', data=body)
         return True
 
@@ -2531,50 +2591,39 @@ class GCENodeDriver(NodeDriver):
         :return:  List of Node objects
         :rtype:   ``list`` of :class:`Node`
         """
-        list_nodes = []
         zone = self._set_zone(ex_zone)
-        if zone is None:
-            request = '/aggregated/instances'
-        else:
-            request = '/zones/%s/instances' % (zone.name)
-        response = self.connection.request(request, method='GET').object
+        response = self.connection.request_aggregated_items('instances',
+                                                            zone=zone)
 
-        if 'items' in response:
-            # The aggregated response returns a dict for each zone
-            if zone is None:
-                # Create volume cache now for fast lookups of disk info.
-                self._ex_populate_volume_dict()
-                for v in response['items'].values():
-                    for i in v.get('instances', []):
-                        try:
-                            list_nodes.append(
-                                self._to_node(i,
-                                              use_disk_cache=ex_use_disk_cache)
-                            )
-                        # If a GCE node has been deleted between
-                        #   - is was listed by `request('.../instances', 'GET')
-                        #   - it is converted by `self._to_node(i)`
-                        # `_to_node()` will raise a ResourceNotFoundError.
-                        #
-                        # Just ignore that node and return the list of the
-                        # other nodes.
-                        except ResourceNotFoundError:
-                            pass
-            else:
-                for i in response['items']:
-                    try:
-                        list_nodes.append(
-                            self._to_node(i, use_disk_cache=ex_use_disk_cache)
-                        )
-                    # If a GCE node has been deleted between
-                    #   - is was listed by `request('.../instances', 'GET')
-                    #   - it is converted by `self._to_node(i)`
-                    # `_to_node()` will raise a ResourceNotFoundError.
-                    #
-                    # Just ignore that node and return the list of the
-                    # other nodes.
-                    except ResourceNotFoundError:
-                        pass
+        if not response.get('items', []):
+            return []
+
+        list_nodes = []
+
+        # The aggregated response returns a dict for each zone
+        # Create volume cache now for fast lookups of disk info.
+        self._ex_populate_volume_dict()
+
+        items = response['items'].values()
+        instances = [item.get('instances', []) for item in items]
+        instances = itertools.chain(*instances)
+
+        for instance in instances:
+            try:
+                node = self._to_node(instance,
+                                     use_disk_cache=ex_use_disk_cache)
+            except ResourceNotFoundError:
+                # If a GCE node has been deleted between
+                #   - is was listed by `request('.../instances', 'GET')
+                #   - it is converted by `self._to_node(i)`
+                # `_to_node()` will raise a ResourceNotFoundError.
+                #
+                # Just ignore that node and return the list of the
+                # other nodes.
+                continue
+
+            list_nodes.append(node)
+
         # Clear the volume cache as lookups are complete.
         self._ex_volume_dict = {}
         return list_nodes
@@ -3959,7 +4008,8 @@ class GCENodeDriver(NodeDriver):
             ex_disks_gce_struct=None, ex_nic_gce_struct=None,
             ex_on_host_maintenance=None, ex_automatic_restart=None,
             ex_preemptible=None, ex_image_family=None, ex_labels=None,
-            ex_accelerator_type=None, ex_accelerator_count=None):
+            ex_accelerator_type=None, ex_accelerator_count=None,
+            ex_disk_size=None):
         """
         Create a new node and return a node object for the node.
 
@@ -4097,6 +4147,9 @@ class GCENodeDriver(NodeDriver):
                                         accelerators to attach to the node.
         :type     ex_accelerator_count: ``int`` or ``None``
 
+        :keyword  ex_disk_size: Defines size of the boot disk.
+                                Integer in gigabytes.
+        :type     ex_disk_size: ``int`` or ``None``
 
         :return:  A Node object for the new node.
         :rtype:   :class:`Node`
@@ -4117,7 +4170,7 @@ class GCENodeDriver(NodeDriver):
                              "'ex_disks_gce_struct'.")
 
         location = location or self.zone
-        if not hasattr(location, 'name'):
+        if location and not hasattr(location, 'name'):
             location = self.ex_get_zone(location)
         if not hasattr(size, 'name'):
             size = self.ex_get_size(size, location)
@@ -4132,7 +4185,7 @@ class GCENodeDriver(NodeDriver):
             image = self.ex_get_image_from_family(ex_image_family)
         if image and not hasattr(image, 'name'):
             image = self.ex_get_image(image)
-        if not hasattr(ex_disk_type, 'name'):
+        if ex_disk_type and not hasattr(ex_disk_type, 'name'):
             ex_disk_type = self.ex_get_disktype(ex_disk_type, zone=location)
         if ex_boot_disk and not hasattr(ex_boot_disk, 'name'):
             ex_boot_disk = self.ex_get_volume(ex_boot_disk, zone=location)
@@ -4154,19 +4207,37 @@ class GCENodeDriver(NodeDriver):
                 'deviceName': name,
                 'initializeParams': {
                     'diskName': name,
+                    'diskSizeGb': ex_disk_size,
                     'diskType': ex_disk_type.extra['selfLink'],
                     'sourceImage': image.extra['selfLink']
                 }
             }]
 
+        if not location and size.extra.get('zone', None):
+            # If location is not provided (either via datacenter driver
+            # constructor argument or via location argument in this method)
+            # we simply default to size location. Not ideal, but it works
+            # for the default experience.
+            location = size.extra['zone']
+
+        # Verify that the location is provided if we can't infer one
+        self._verify_zone_is_set(zone=location)
+
         request, node_data = self._create_node_req(
-            name, size, image, location, ex_network, ex_tags, ex_metadata,
-            ex_boot_disk, external_ip, internal_ip, ex_disk_type,
-            ex_disk_auto_delete, ex_service_accounts, description,
-            ex_can_ip_forward, ex_disks_gce_struct, ex_nic_gce_struct,
-            ex_on_host_maintenance, ex_automatic_restart, ex_preemptible,
-            ex_subnetwork, ex_labels, ex_accelerator_type,
-            ex_accelerator_count)
+            name, size, image, location,
+            network=ex_network, tags=ex_tags, metadata=ex_metadata,
+            boot_disk=ex_boot_disk, external_ip=external_ip,
+            internal_ip=internal_ip, ex_disk_type=ex_disk_type,
+            ex_disk_auto_delete=ex_disk_auto_delete,
+            ex_service_accounts=ex_service_accounts, description=description,
+            ex_can_ip_forward=ex_can_ip_forward,
+            ex_disks_gce_struct=ex_disks_gce_struct,
+            ex_nic_gce_struct=ex_nic_gce_struct,
+            ex_on_host_maintenance=ex_on_host_maintenance,
+            ex_automatic_restart=ex_automatic_restart,
+            ex_preemptible=ex_preemptible, ex_subnetwork=ex_subnetwork,
+            ex_labels=ex_labels, ex_accelerator_type=ex_accelerator_type,
+            ex_accelerator_count=ex_accelerator_count)
         self.connection.async_request(request, method='POST', data=node_data)
         return self.ex_get_node(name, location.name)
 
@@ -6293,61 +6364,6 @@ class GCENodeDriver(NodeDriver):
 
         return success
 
-    def deploy_node(self, name, size, image, script, location=None,
-                    ex_network='default', ex_tags=None,
-                    ex_service_accounts=None):
-        """
-        Create a new node and run a script on start-up.
-
-        :param  name: The name of the node to create.
-        :type   name: ``str``
-
-        :param  size: The machine type to use.
-        :type   size: ``str`` or :class:`GCENodeSize`
-
-        :param  image: The image to use to create the node.
-        :type   image: ``str`` or :class:`GCENodeImage`
-
-        :param  script: File path to start-up script
-        :type   script: ``str``
-
-        :keyword  location: The location (zone) to create the node in.
-        :type     location: ``str`` or :class:`NodeLocation` or
-                            :class:`GCEZone` or ``None``
-
-        :keyword  ex_network: The network to associate with the node.
-        :type     ex_network: ``str`` or :class:`GCENetwork`
-
-        :keyword  ex_tags: A list of tags to associate with the node.
-        :type     ex_tags: ``list`` of ``str`` or ``None``
-
-        :keyword  ex_service_accounts: Specify a list of serviceAccounts when
-                                       creating the instance. The format is a
-                                       list of dictionaries containing email
-                                       and list of scopes, e.g.
-                                       [{'email':'default',
-                                       'scopes':['compute', ...]}, ...]
-                                       Scopes can either be full URLs or short
-                                       names. If not provided, use the
-                                       'default' service account email and a
-                                       scope of 'devstorage.read_only'. Also
-                                       accepts the aliases defined in
-                                       'gcloud compute'.
-        :type     ex_service_accounts: ``list``
-
-        :return:  A Node object for the new node.
-        :rtype:   :class:`Node`
-        """
-        with open(script, 'r') as f:
-            script_data = f.read()
-        # TODO(erjohnso): allow user defined metadata here...
-        metadata = {'items': [{'key': 'startup-script', 'value': script_data}]}
-
-        return self.create_node(name, size, image, location=location,
-                                ex_network=ex_network, ex_tags=ex_tags,
-                                ex_metadata=metadata,
-                                ex_service_accounts=ex_service_accounts)
-
     def attach_volume(self, node, volume, device=None, ex_mode=None,
                       ex_boot=False, ex_type=None, ex_source=None,
                       ex_auto_delete=None, ex_initialize_params=None,
@@ -6724,35 +6740,62 @@ class GCENodeDriver(NodeDriver):
         self.connection.async_request(request, method='POST', data=body)
         return True
 
-    def ex_start_node(self, node):
+    def start_node(self, node, ex_sync=True):
         """
         Start a node that is stopped and in TERMINATED state.
 
         :param  node: Node object to start
         :type   node: :class:`Node`
 
+        :keyword  sync: If true, do not return until destroyed or timeout
+        :type     sync: ``bool``
+
         :return:  True if successful
         :rtype:   ``bool``
         """
         request = '/zones/%s/instances/%s/start' % (node.extra['zone'].name,
                                                     node.name)
-        self.connection.async_request(request, method='POST')
+
+        if ex_sync:
+            self.connection.async_request(request, method='POST')
+        else:
+            self.connection.request(request, method='POST')
+
         return True
 
-    def ex_stop_node(self, node):
+    def stop_node(self, node, ex_sync=True):
         """
         Stop a running node.
 
         :param  node: Node object to stop
         :type   node: :class:`Node`
 
+        :keyword  sync: If true, do not return until destroyed or timeout
+        :type     sync: ``bool``
+
         :return:  True if successful
         :rtype:   ``bool``
         """
         request = '/zones/%s/instances/%s/stop' % (node.extra['zone'].name,
                                                    node.name)
-        self.connection.async_request(request, method='POST')
+        if ex_sync:
+            self.connection.async_request(request, method='POST')
+        else:
+            self.connection.request(request, method='POST')
+
         return True
+
+    def ex_start_node(self, node, sync=True):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.start_node(node=node, ex_sync=sync)
+
+    def ex_stop_node(self, node, sync=True):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.stop_node(node=node, ex_sync=sync)
 
     def ex_destroy_instancegroupmanager(self, manager):
         """
@@ -6814,7 +6857,7 @@ class GCENodeDriver(NodeDriver):
         self.connection.async_request(request, method='DELETE')
         return True
 
-    def destroy_node(self, node, destroy_boot_disk=False):
+    def destroy_node(self, node, destroy_boot_disk=False, ex_sync=True):
         """
         Destroy a node.
 
@@ -6827,12 +6870,19 @@ class GCENodeDriver(NodeDriver):
                                      method.)
         :type     destroy_boot_disk: ``bool``
 
+        :keyword  ex_sync: If true, do not return until destroyed or timeout
+        :type     ex_sync: ``bool``
+
         :return:  True if successful
         :rtype:   ``bool``
         """
         request = '/zones/%s/instances/%s' % (node.extra['zone'].name,
                                               node.name)
-        self.connection.async_request(request, method='DELETE')
+        if ex_sync:
+            self.connection.async_request(request, method='DELETE')
+        else:
+            self.connection.request(request, method='DELETE')
+
         if destroy_boot_disk and node.extra['boot_disk']:
             node.extra['boot_disk'].destroy()
         return True
@@ -7084,9 +7134,30 @@ class GCENodeDriver(NodeDriver):
         :rtype:   :class:`GCEDiskType`
         """
         zone = self._set_zone(zone)
-        request = '/zones/%s/diskTypes/%s' % (zone.name, name)
-        response = self.connection.request(request, method='GET').object
-        return self._to_disktype(response)
+
+        if zone:
+            request_path = "/zones/%s/diskTypes/%s" % (zone.name, name)
+        else:
+            request_path = "/aggregated/diskTypes"
+
+        response = self.connection.request(request_path, method='GET')
+
+        if 'items' in response.object:
+            # Aggregated response, zone not provided
+            data = None
+
+            for zone_item in response.object['items'].values():
+                for item in zone_item['diskTypes']:
+                    if item['name'] == name:
+                        data = item
+                        break
+        else:
+            data = response.object
+
+        if not data:
+            raise ValueError('Disk type with name "%s" not found' % (name))
+
+        return self._to_disktype(data)
 
     def ex_get_accelerator_type(self, name, zone=None):
         """
@@ -8209,6 +8280,10 @@ class GCENodeDriver(NodeDriver):
                                       with the node.
         :type   ex_accelerator_count: ``int`` or ``None``
 
+        :keyword  ex_disk_size: Specify size of the boot disk.
+                                Integer in gigabytes.
+        :type     ex_disk_size: ``int`` or ``None``
+
         :return:  A tuple containing a request string and a node_data dict.
         :rtype:   ``tuple`` of ``str`` and ``dict``
         """
@@ -8849,6 +8924,8 @@ class GCENodeDriver(NodeDriver):
         extra['zone'] = self.ex_get_zone(node['zone'])
         extra['image'] = node.get('image')
         extra['machineType'] = node.get('machineType')
+        extra['cpuPlatform'] = node.get('cpuPlatform')
+        extra['minCpuPlatform'] = node.get('minCpuPlatform')
         extra['disks'] = node.get('disks', [])
         extra['networkInterfaces'] = node.get('networkInterfaces')
         extra['id'] = node['id']
@@ -9045,6 +9122,9 @@ class GCENodeDriver(NodeDriver):
         extra['sourceSnapshot'] = volume.get('sourceSnapshot')
         extra['sourceSnapshotId'] = volume.get('sourceSnapshotId')
         extra['options'] = volume.get('options')
+        extra['labels'] = volume.get('labels', {})
+        extra['labelFingerprint'] = volume.get('labelFingerprint')
+
         if 'licenses' in volume:
             lic_objs = self._licenses_from_urls(licenses=volume['licenses'])
             extra['licenses'] = lic_objs
@@ -9185,7 +9265,11 @@ class GCENodeDriver(NodeDriver):
         extra['namedPorts'] = instancegroup.get('namedPorts', [])
         extra['fingerprint'] = instancegroup.get('fingerprint', None)
 
-        zone = self.ex_get_zone(instancegroup['zone'])
+        zone = instancegroup.get('zone', None)
+        if zone:
+            # Apparently zone attribute is not always present, see
+            # https://github.com/apache/libcloud/issues/1346 for details
+            zone = self.ex_get_zone(zone)
 
         # Note: network/subnetwork will not be available if the Instance Group
         # does not contain instances.
@@ -9518,3 +9602,25 @@ class GCENodeDriver(NodeDriver):
         'compute#urlMap': _to_urlmap,
         'compute#zone': _to_zone,
     }
+
+    def _verify_zone_is_set(self, zone=None):
+        """
+        Verify that the zone / location is set for a particular operation -
+        either via "datacenter" driver constructor argument or via
+        "location" / "zone" keyword argument passed to the specific method
+        call.
+
+        This check is mandatory for methods which rely on the location being
+        set - e.g. create_node.
+        """
+        if self.zone:
+            return True
+
+        if not zone:
+            msg = ('Zone not provided. Zone needs to be specified for this'
+                   'operation. This can be done by passing "datacenter" '
+                   'argument to the driver constructor or by passing location '
+                   '/ zone argument to this method.')
+            raise ValueError(msg)
+
+        return True

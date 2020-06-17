@@ -16,13 +16,16 @@
 
 import os
 import sys
+import tempfile
 import logging
 
 try:
-    import paramiko
+    import paramiko  # NOQA
     have_paramiko = True
 except ImportError:
     have_paramiko = False
+
+from mock import patch
 
 import libcloud
 from libcloud import _init_once
@@ -32,6 +35,10 @@ from libcloud.test import unittest
 
 
 class TestUtils(unittest.TestCase):
+    def tearDown(self):
+        if 'LIBCLOUD_DEBUG' in os.environ:
+            del os.environ['LIBCLOUD_DEBUG']
+
     def test_init_once_and_debug_mode(self):
         if have_paramiko:
             paramiko_logger = logging.getLogger('paramiko')
@@ -47,7 +54,8 @@ class TestUtils(unittest.TestCase):
             self.assertEqual(paramiko_log_level, logging.INFO)
 
         # Enable debug mode
-        os.environ['LIBCLOUD_DEBUG'] = '/dev/null'
+        _, tmp_path = tempfile.mkstemp()
+        os.environ['LIBCLOUD_DEBUG'] = tmp_path
         _init_once()
 
         self.assertTrue(LoggingConnection.log is not None)
@@ -63,6 +71,18 @@ class TestUtils(unittest.TestCase):
     def test_raises_error(self):
         with self.assertRaises(DriverTypeNotFoundError):
             libcloud.get_driver('potato', 'potato')
+
+    @patch.object(libcloud.requests, '__version__', '2.6.0')
+    @patch.object(libcloud.requests.packages.chardet, '__version__', '2.2.1')
+    def test_init_once_detects_bad_yum_install_requests(self, *args):
+        expected_msg = 'Known bad version of requests detected'
+        with self.assertRaisesRegex(AssertionError, expected_msg):
+            _init_once()
+
+    @patch.object(libcloud.requests, '__version__', '2.6.0')
+    @patch.object(libcloud.requests.packages.chardet, '__version__', '2.3.0')
+    def test_init_once_correct_chardet_version(self, *args):
+        _init_once()
 
 
 if __name__ == '__main__':

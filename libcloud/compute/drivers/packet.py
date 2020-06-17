@@ -232,8 +232,14 @@ def _list_async(driver):
             .object['operating_systems']
         return list(map(self._to_image, data))
 
-    def list_sizes(self):
-        data = self.connection.request('/plans').object['plans']
+    def list_sizes(self, ex_project_id=None):
+        project_id = ex_project_id or self.project_id or (
+            len(self.projects) and self.projects[0].id)
+        if project_id:
+            data = self.connection.request('/projects/%s/plans' %
+                                           project_id).object['plans']
+        else:  # This only works with personal tokens
+            data = self.connection.request('/plans').object['plans']
         return [self._to_size(size) for size in data if
                 size.get('line') == 'baremetal']
 
@@ -287,13 +293,13 @@ def _list_async(driver):
                                       params=params, method='POST')
         return res.status == httplib.OK
 
-    def ex_start_node(self, node):
+    def start_node(self, node):
         params = {'type': 'power_on'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
                                       params=params, method='POST')
         return res.status == httplib.OK
 
-    def ex_stop_node(self, node):
+    def stop_node(self, node):
         params = {'type': 'power_off'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
                                       params=params, method='POST')
@@ -303,6 +309,18 @@ def _list_async(driver):
         res = self.connection.request('/devices/%s' % (node.id),
                                       method='DELETE')
         return res.status == httplib.OK
+
+    def ex_start_node(self, node):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.start_node(node=node)
+
+    def ex_stop_node(self, node):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.stop_node(node=node)
 
     def ex_reinstall_node(self, node):
         params = {'type': 'reinstall'}

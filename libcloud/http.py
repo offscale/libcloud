@@ -102,7 +102,8 @@ class LibcloudBaseConnection(object):
         self.http_proxy_used = True
 
         self.session.proxies = {
-            self.proxy_scheme: proxy_url
+            'http': proxy_url,
+            'https': proxy_url,
         }
 
     def _parse_proxy_url(self, proxy_url):
@@ -193,7 +194,7 @@ class LibcloudConnection(LibcloudBaseConnection):
         http_proxy_url_env = os.environ.get(HTTP_PROXY_ENV_VARIABLE_NAME,
                                             https_proxy_url_env)
 
-        # Connection argument rgument has precedence over environment variables
+        # Connection argument has precedence over environment variables
         proxy_url = kwargs.pop('proxy_url', http_proxy_url_env)
 
         self._setup_verify()
@@ -201,12 +202,13 @@ class LibcloudConnection(LibcloudBaseConnection):
 
         LibcloudBaseConnection.__init__(self)
 
+        self.session.timeout = kwargs.pop('timeout', 60)
+
         if 'cert_file' in kwargs or 'key_file' in kwargs:
             self._setup_signing(**kwargs)
 
         if proxy_url:
             self.set_http_proxy(proxy_url=proxy_url)
-        self.session.timeout = kwargs.get('timeout', 60)
 
     @property
     def verification(self):
@@ -243,7 +245,7 @@ class LibcloudConnection(LibcloudBaseConnection):
 
         self.response = self.session.send(
             prepped,
-            stream=raw,
+            stream=stream,
             verify=self.ca_cert if self.ca_cert is not None else self.verify)
 
     def getresponse(self):

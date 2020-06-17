@@ -237,6 +237,14 @@ class OpenStackNodeDriver(NodeDriver, OpenStackDriverMixin):
         # pylint: disable=no-member
         return self._reboot_node(node, reboot_type='HARD')
 
+    def start_node(self, node):
+        # pylint: disable=no-member
+        return self._post_simple_node_action(node, 'os-start')
+
+    def stop_node(self, node):
+        # pylint: disable=no-member
+        return self._post_simple_node_action(node, 'os-stop')
+
     def list_nodes(self, ex_all_tenants=False):
         """
         List the nodes in a tenant
@@ -313,6 +321,8 @@ class OpenStackNodeDriver(NodeDriver, OpenStackDriverMixin):
     def attach_volume(self, node, volume, device="auto"):
         # when "auto" or None is provided for device, openstack will let
         # the guest OS pick the next available device (fi. /dev/vdb)
+        if device == "auto":
+            device = None
         return self.connection.request(
             '/servers/%s/os-volume_attachments' % node.id,
             method='POST',
@@ -556,7 +566,8 @@ class OpenStack_1_0_NodeDriver(OpenStackNodeDriver):
 
         return resp.status == httplib.NO_CONTENT
 
-    def create_node(self, **kwargs):
+    def create_node(self, name, size, image, ex_metadata=None, ex_files=None,
+                    ex_shared_ip_group=None, ex_shared_ip_group_id=None):
         """
         Create a new node
 
@@ -573,33 +584,28 @@ class OpenStack_1_0_NodeDriver(OpenStackNodeDriver):
             that shared IP group
         :type       ex_shared_ip_group_id: ``str``
         """
-        name = kwargs['name']
-        image = kwargs['image']
-        size = kwargs['size']
-
         attributes = {'xmlns': self.XML_NAMESPACE,
                       'name': name,
                       'imageId': str(image.id),
                       'flavorId': str(size.id)}
 
-        if 'ex_shared_ip_group' in kwargs:
+        if ex_shared_ip_group:
             # Deprecate this. Be explicit and call the variable
             # ex_shared_ip_group_id since user needs to pass in the id, not the
             # name.
             warnings.warn('ex_shared_ip_group argument is deprecated.'
                           ' Please use ex_shared_ip_group_id')
 
-        if 'ex_shared_ip_group_id' in kwargs:
-            shared_ip_group_id = kwargs['ex_shared_ip_group_id']
-            attributes['sharedIpGroupId'] = shared_ip_group_id
+        if ex_shared_ip_group_id:
+            attributes['sharedIpGroupId'] = ex_shared_ip_group_id
 
         server_elm = ET.Element('server', attributes)
 
-        metadata_elm = self._metadata_to_xml(kwargs.get("ex_metadata", {}))
+        metadata_elm = self._metadata_to_xml(ex_metadata or {})
         if metadata_elm:
             server_elm.append(metadata_elm)
 
-        files_elm = self._files_to_xml(kwargs.get("ex_files", {}))
+        files_elm = self._files_to_xml(ex_files or {})
         if files_elm:
             server_elm.append(files_elm)
 
@@ -896,7 +902,7 @@ class OpenStack_1_0_NodeDriver(OpenStackNodeDriver):
         return self._to_ip_addresses(resp.object)
 
     def _metadata_to_xml(self, metadata):
-        if len(metadata) == 0:
+        if not metadata:
             return None
 
         metadata_elm = ET.Element('metadata')
@@ -907,7 +913,7 @@ class OpenStack_1_0_NodeDriver(OpenStackNodeDriver):
         return metadata_elm
 
     def _files_to_xml(self, files):
-        if len(files) == 0:
+        if not files:
             return None
 
         personality_elm = ET.Element('personality')
@@ -915,7 +921,7 @@ class OpenStack_1_0_NodeDriver(OpenStackNodeDriver):
             file_elm = ET.SubElement(personality_elm,
                                      'file',
                                      {'path': str(k)})
-            file_elm.text = base64.b64encode(b(v))
+            file_elm.text = base64.b64encode(b(v)).decode('ascii')
 
         return personality_elm
 
@@ -1323,7 +1329,13 @@ class OpenStack_1_1_NodeDriver(OpenStackNodeDriver):
                                                     None))
         super(OpenStack_1_1_NodeDriver, self).__init__(*args, **kwargs)
 
-    def create_node(self, **kwargs):
+    def create_node(self, name, size, image=None, ex_keyname=None,
+                    ex_userdata=None,
+                    ex_config_drive=None, ex_security_groups=None,
+                    ex_metadata=None, ex_files=None, networks=None,
+                    ex_disk_config=None,
+                    ex_admin_pass=None,
+                    ex_availability_zone=None, ex_blockdevicemappings=None):
         """Create a new node
 
         @inherits:  :class:`NodeDriver.create_node`
@@ -1371,8 +1383,21 @@ class OpenStack_1_1_NodeDriver(OpenStackNodeDriver):
         :keyword    ex_availability_zone: Nova availability zone for the node
         :type       ex_availability_zone: ``str``
         """
+        ex_metadata = ex_metadata or {}
+        ex_files = ex_files or {}
+        networks = networks or []
+        ex_security_groups = ex_security_groups or []
 
-        server_params = self._create_args_to_params(None, **kwargs)
+        server_params = self._create_args_to_params(
+            node=None,
+            name=name,
+            size=size, image=image, ex_keyname=ex_keyname,
+            ex_userdata=ex_userdata, ex_config_drive=ex_config_drive,
+            ex_security_groups=ex_security_groups, ex_metadata=ex_metadata,
+            ex_files=ex_files, networks=networks,
+            ex_disk_config=ex_disk_config,
+            ex_availability_zone=ex_availability_zone,
+            ex_blockdevicemappings=ex_blockdevicemappings)
 
         resp = self.connection.request("/servers",
                                        method='POST',
@@ -1465,59 +1490,58 @@ class OpenStack_1_1_NodeDriver(OpenStackNodeDriver):
     def _create_args_to_params(self, node, **kwargs):
         server_params = {
             'name': kwargs.get('name'),
-            'metadata': kwargs.get('ex_metadata', {}),
+            'metadata': kwargs.get('ex_metadata', {}) or {},
             'personality': self._files_to_personality(kwargs.get("ex_files",
-                                                                 {}))
+                                                                 {}) or {})
         }
 
-        if 'ex_availability_zone' in kwargs:
+        if kwargs.get('ex_availability_zone', None):
             server_params['availability_zone'] = kwargs['ex_availability_zone']
 
-        if 'ex_keyname' in kwargs:
+        if kwargs.get('ex_keyname', None):
             server_params['key_name'] = kwargs['ex_keyname']
 
-        if 'ex_userdata' in kwargs:
+        if kwargs.get('ex_userdata', None):
             server_params['user_data'] = base64.b64encode(
                 b(kwargs['ex_userdata'])).decode('ascii')
 
-        if 'ex_config_drive' in kwargs:
-            server_params['config_drive'] = kwargs['ex_config_drive']
-
-        if 'ex_disk_config' in kwargs:
+        if kwargs.get('ex_disk_config', None):
             server_params['OS-DCF:diskConfig'] = kwargs['ex_disk_config']
 
-        if 'ex_config_drive' in kwargs:
+        if kwargs.get('ex_config_drive', None):
             server_params['config_drive'] = str(kwargs['ex_config_drive'])
 
-        if 'ex_admin_pass' in kwargs:
+        if kwargs.get('ex_admin_pass', None):
             server_params['adminPass'] = kwargs['ex_admin_pass']
 
-        if 'networks' in kwargs:
-            networks = kwargs['networks']
+        if kwargs.get('networks', None):
+            networks = kwargs['networks'] or []
             networks = [{'uuid': network.id} for network in networks]
             server_params['networks'] = networks
 
-        if 'ex_security_groups' in kwargs:
+        if kwargs.get('ex_security_groups', None):
             server_params['security_groups'] = []
-            for security_group in kwargs['ex_security_groups']:
+            for security_group in kwargs['ex_security_groups'] or []:
                 name = security_group.name
                 server_params['security_groups'].append({'name': name})
 
-        if 'ex_blockdevicemappings' in kwargs:
+        if kwargs.get('ex_blockdevicemappings', None):
             server_params['block_device_mapping_v2'] = \
                 kwargs['ex_blockdevicemappings']
 
-        if 'name' in kwargs:
+        if kwargs.get('name', None):
             server_params['name'] = kwargs.get('name')
         else:
             server_params['name'] = node.name
 
-        if 'image' in kwargs:
+        if kwargs.get('image', None):
             server_params['imageRef'] = kwargs.get('image').id
         else:
-            server_params['imageRef'] = node.extra.get('imageId')
+            server_params['imageRef'] = node.extra.get(
+                'imageId', ''
+            ) if node else ''
 
-        if 'size' in kwargs:
+        if kwargs.get('size', None):
             server_params['flavorRef'] = kwargs.get('size').id
         else:
             server_params['flavorRef'] = node.extra.get('flavorId')
@@ -2575,11 +2599,17 @@ class OpenStack_1_1_NodeDriver(OpenStackNodeDriver):
     def ex_unpause_node(self, node):
         return self._post_simple_node_action(node, 'unpause')
 
-    def ex_stop_node(self, node):
-        return self._post_simple_node_action(node, 'os-stop')
-
     def ex_start_node(self, node):
-        return self._post_simple_node_action(node, 'os-start')
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.start_node(node=node)
+
+    def ex_stop_node(self, node):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.stop_node(node=node)
 
     def ex_suspend_node(self, node):
         return self._post_simple_node_action(node, 'suspend')
@@ -2684,7 +2714,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
     network_connection = None
 
     # Similarly all image operations are noe exposed through the block-storage
-    # API of the cinde service:
+    # API of the cinder service:
     # https://developer.openstack.org/api-ref/block-storage/
     volumev2_connectionCls = OpenStack_2_VolumeV2Connection
     volumev2_connection = None
@@ -3168,7 +3198,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
         :param      node: node
         :type       node: :class:`Node`
 
-        :param      port: port interface to remove
+        :param      port: port interface to detach
         :type       port: :class:`OpenStack_2_PortInterface`
 
         :rtype: ``bool``
@@ -3185,7 +3215,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
         :param      node: node
         :type       node: :class:`Node`
 
-        :param      port: port interface to remove
+        :param      port: port interface to attach
         :type       port: :class:`OpenStack_2_PortInterface`
 
         :rtype: ``bool``
@@ -3256,7 +3286,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
         """
         Update a OpenStack_2_PortInterface
 
-        :param      port: port interface to remove
+        :param      port: port interface to update
         :type       port: :class:`OpenStack_2_PortInterface`
 
         :param      description: Description of the port
@@ -3294,7 +3324,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
         if security_groups is not None:
             data['port']['security_groups'] = security_groups
         response = self.network_connection.request(
-            '/v2.0/ports/{}'.format(port.id), method='PUT'
+            '/v2.0/ports/{}'.format(port.id), method='PUT', data=data
         )
         return self._to_port(response.object['port'])
 
@@ -3320,7 +3350,7 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
             self.volumev2_connection.request('/volumes/%s' % volumeId).object)
 
     def create_volume(self, size, name, location=None, snapshot=None,
-                      ex_volume_type=None):
+                      ex_volume_type=None, ex_image_ref=None):
         """
         Create a new volume.
 
@@ -3343,6 +3373,10 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
                             (optional)
         :type ex_volume_type: ``str``
 
+        :param ex_image_ref: The image to create the volume from
+                             when creating a bootable volume (optional)
+        :type ex_image_ref: ``str``
+
         :return: The newly created volume.
         :rtype: :class:`StorageVolume`
         """
@@ -3357,6 +3391,9 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
 
         if ex_volume_type:
             volume['volume_type'] = ex_volume_type
+
+        if ex_image_ref:
+            volume['imageRef'] = ex_image_ref
 
         if location:
             volume['availability_zone'] = location
@@ -3563,6 +3600,22 @@ class OpenStack_2_NodeDriver(OpenStack_1_1_NodeDriver):
         resp = self.network_connection.request(
             '/v2.0/security-group-rules/%s' % (rule.id), method='DELETE')
         return resp.status == httplib.NO_CONTENT
+
+    def ex_remove_security_group_from_node(self, security_group, node):
+        """
+        Remove a Security Group from a node.
+
+        :param security_group: Security Group to remove from node.
+        :type  security_group: :class:`OpenStackSecurityGroup`
+
+        :param      node: Node to remove the Security Group.
+        :type       node: :class:`Node`
+
+        :rtype: ``bool``
+        """
+        server_params = {'name': security_group.name}
+        resp = self._node_action(node, 'removeSecurityGroup', **server_params)
+        return resp.status == httplib.ACCEPTED
 
     def _to_floating_ip_pool(self, obj):
         return OpenStack_2_FloatingIpPool(obj['id'], obj['name'],
@@ -3876,8 +3929,8 @@ class OpenStack_2_FloatingIpPool(object):
                                            port.extra["mac_address"]}
 
         if 'port_details' in obj and obj['port_details']:
-            if obj['port_details']['device_owner'] in ['compute:nova',
-                                                       'compute:None']:
+            dev_owner = obj['port_details']['device_owner']
+            if dev_owner and dev_owner.startswith("compute:"):
                 instance_id = obj['port_details']['device_id']
 
         ip_address = obj['floating_ip_address']

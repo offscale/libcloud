@@ -405,7 +405,7 @@ class AzureNodeDriver(NodeDriver):
                     image,
                     auth,
                     ex_resource_group,
-                    ex_storage_account,
+                    ex_storage_account=None,
                     ex_blob_container="vhds",
                     location=None,
                     ex_user_name="azureuser",
@@ -524,6 +524,9 @@ class AzureNodeDriver(NodeDriver):
         :return: The newly created node.
         :rtype: :class:`.Node`
         """
+        if not ex_use_managed_disks and ex_storage_account is None:
+            raise ValueError("ex_use_managed_disks is False, "
+                             "must provide ex_storage_account")
 
         if location is None:
             location = self.default_location
@@ -959,7 +962,7 @@ class AzureNodeDriver(NodeDriver):
         if ex_lun is None:
             # find the smallest unused logical unit number
             used_luns = [disk['lun'] for disk in disks]
-            free_luns = [lun for lun in range(0, 63) if lun not in used_luns]
+            free_luns = [lun for lun in range(0, 64) if lun not in used_luns]
             if len(free_luns) > 0:
                 ex_lun = free_luns[0]
             else:
@@ -1982,7 +1985,7 @@ class AzureNodeDriver(NodeDriver):
             params={"api-version": '2018-06-01'},
             method="PATCH")
 
-    def ex_start_node(self, node):
+    def start_node(self, node):
         """
         Start a stopped node.
 
@@ -1996,7 +1999,7 @@ class AzureNodeDriver(NodeDriver):
                                     method='POST')
         return r.object
 
-    def ex_stop_node(self, node, deallocate=True):
+    def stop_node(self, node, ex_deallocate=True):
         """
         Stop a running node.
 
@@ -2010,8 +2013,7 @@ class AzureNodeDriver(NodeDriver):
         were running.
         :type deallocate: ``bool``
         """
-
-        if deallocate:
+        if ex_deallocate:
             target = "%s/deallocate" % node.id
         else:
             target = "%s/powerOff" % node.id
@@ -2019,6 +2021,18 @@ class AzureNodeDriver(NodeDriver):
                                     params={"api-version": "2015-06-15"},
                                     method='POST')
         return r.object
+
+    def ex_start_node(self, node):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.start_node(node=node)
+
+    def ex_stop_node(self, node, deallocate=True):
+        # NOTE: This method is here for backward compatibility reasons after
+        # this method was promoted to be part of the standard compute API in
+        # Libcloud v2.7.0
+        return self.stop_node(node=node, ex_deallocate=deallocate)
 
     def ex_get_storage_account_keys(self, resource_group, storage_account):
         """

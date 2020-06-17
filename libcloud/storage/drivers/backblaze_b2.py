@@ -23,7 +23,7 @@ import hashlib
 try:
     import simplejson as json
 except ImportError:
-    import json
+    import json  # type: ignore
 
 from libcloud.utils.py3 import b
 from libcloud.utils.py3 import httplib
@@ -130,7 +130,7 @@ class BackblazeB2AuthConnection(ConnectionUserAndKey):
 
 
 class BackblazeB2Connection(ConnectionUserAndKey):
-    host = None  # Note: host is set after authentication
+    host = None  # type: ignore  # Note: host is set after authentication
     secure = True
     responseCls = BackblazeB2Response
     authCls = BackblazeB2AuthConnection
@@ -147,7 +147,7 @@ class BackblazeB2Connection(ConnectionUserAndKey):
         auth_conn = self._auth_conn.authenticate()
 
         # Set host to the download server
-        self.host = auth_conn.download_host
+        self._set_host(auth_conn.download_host)
 
         action = '/file/' + action
         method = 'GET'
@@ -162,7 +162,7 @@ class BackblazeB2Connection(ConnectionUserAndKey):
         auth_conn = self._auth_conn.authenticate()
 
         # Upload host is dynamically retrieved for each upload request
-        self.host = upload_host
+        self._set_host(host=upload_host)
 
         method = 'POST'
         raw = False
@@ -181,7 +181,7 @@ class BackblazeB2Connection(ConnectionUserAndKey):
         auth_conn = self._auth_conn.authenticate()
 
         # Set host
-        self.host = auth_conn.api_host
+        self._set_host(host=auth_conn.api_host)
 
         # Include Content-Type
         if not raw and data:
@@ -223,6 +223,17 @@ class BackblazeB2Connection(ConnectionUserAndKey):
                                                               raw=raw)
         return response
 
+    def _set_host(self, host):
+        """
+        Dynamically set host which will be used for the following HTTP
+        requests.
+
+        NOTE: This is needed because Backblaze uses different hosts for API,
+        download and upload requests.
+        """
+        self.host = host
+        self.connection.host = 'https://%s' % (host)
+
 
 class BackblazeB2StorageDriver(StorageDriver):
     connectionCls = BackblazeB2Connection
@@ -240,14 +251,34 @@ class BackblazeB2StorageDriver(StorageDriver):
         containers = self._to_containers(data=resp.object)
         return containers
 
-    def iterate_container_objects(self, container):
+    def iterate_container_objects(self, container, prefix=None,
+                                  ex_prefix=None):
+        """
+        Return a generator of objects for the given container.
+
+        :param container: Container instance
+        :type container: :class:`Container`
+
+        :param prefix: Filter objects starting with a prefix.
+                       Filtering is performed client-side.
+        :type  prefix: ``str``
+
+        :param ex_prefix: (Deprecated.) Filter objects starting with a prefix.
+                          Filtering is performed client-side.
+        :type  ex_prefix: ``str``
+
+        :return: A generator of Object instances.
+        :rtype: ``generator`` of :class:`Object`
+        """
+        prefix = self._normalize_prefix_argument(prefix, ex_prefix)
+
         # TODO: Support pagination
         params = {'bucketId': container.extra['id']}
         resp = self.connection.request(action='b2_list_file_names',
                                        method='GET',
                                        params=params)
         objects = self._to_objects(data=resp.object, container=container)
-        return objects
+        return self._filter_listed_container_objects(objects, prefix)
 
     def get_container(self, container_name):
         containers = self.iterate_containers()
@@ -318,8 +349,11 @@ class BackblazeB2StorageDriver(StorageDriver):
 
         return self._get_object(obj=obj, callback=read_in_chunks,
                                 response=response,
-                                callback_kwargs={'iterator': response.response,
-                                                 'chunk_size': chunk_size},
+                                callback_kwargs={
+                                    'iterator': response.iter_content(
+                                        chunk_size
+                                    ),
+                                    'chunk_size': chunk_size},
                                 success_status_code=httplib.OK)
 
     def upload_object(self, file_path, container, object_name, extra=None,
